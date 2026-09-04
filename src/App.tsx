@@ -1171,22 +1171,43 @@ export default function App() {
     setSuggest(null);
   };
 
-  const runSuggest = () => {
-    setSessionAddMenuOpen(false);
-    const prev = activeSessionSongs[activeSessionSongs.length - 1];
-    if (!prev) return;
-    const candidates = songs.filter((s) => !activeSession.songIds.includes(s.id));
-    if (candidates.length === 0) {
-      setSuggest({ result: null, error: "No hay más canciones en tu repertorio para sugerir." });
-      return;
+  // Reemplazá TU_API_KEY_AQUÍ por la clave de Google AI Studio o usá import.meta.env.VITE_GEMINI_API_KEY
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+
+const runSuggest = async () => {
+  setSessionAddMenuOpen(false);
+  const prev = activeSessionSongs[activeSessionSongs.length - 1];
+  if (!prev) return;
+
+  const candidates = songs.filter((s) => !activeSession.songIds.includes(s.id));
+  if (candidates.length === 0) {
+    setSuggest({ result: null, error: "No hay más canciones en tu repertorio para sugerir." });
+    return;
+  }
+
+  setSuggest({ loading: true, result: null, error: "" });
+
+  try {
+    if (GEMINI_API_KEY && GEMINI_API_KEY !== "TU_API_KEY_AQUÍ") {
+      const res = await aiSuggestNextGemini(prev, candidates, GEMINI_API_KEY);
+      const song = res?.songId ? songs.find((s) => String(s.id) === String(res.songId)) : null;
+      
+      if (song) {
+        setSuggest({ result: { song, reason: res.reason || "Recomendada por temática." }, error: "" });
+        return;
+      }
     }
+    throw new Error("Usar respaldo local");
+  } catch (e) {
+    // Respaldo inteligente local si falla la red o no hay clave
     const res = localSuggestNext(prev, candidates);
-    if (!res) {
+    if (res) {
+      setSuggest({ result: res, error: "" });
+    } else {
       setSuggest({ result: null, error: "No se pudo generar una sugerencia." });
-      return;
     }
-    setSuggest({ result: res, error: "" });
-  };
+  }
+};
 
   return (
     <div className="app">
