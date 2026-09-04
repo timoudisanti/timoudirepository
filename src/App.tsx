@@ -1402,15 +1402,17 @@ export default function App() {
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap');
-/* Bloqueo estricto de zoom en iOS Safari */
+/* Bloqueo de zoom en inputs para iOS Safari */
 input, select, textarea {
   font-size: 16px !important;
   touch-action: manipulation;
 }
 
 html, body {
+  width: 100%;
+  margin: 0;
+  padding: 0;
   overflow-x: hidden;
-  max-width: 100vw;
 }
 :root {
   --bg: #ffffff;
@@ -1434,6 +1436,7 @@ html, body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  width: 100%;
   max-width: 480px;
   margin: 0 auto;
   display: flex;
