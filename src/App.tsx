@@ -46,6 +46,43 @@ const SECTION_TYPES = [
 ];
 const SECTION_LABEL_BY_KEY = Object.fromEntries(SECTION_TYPES.map((t) => [t.key, t.label]));
 
+async function aiSuggestNextGemini(prevSong, candidates, apiKey) {
+  const pool = candidates.slice(0, 50);
+  const list = pool
+    .map((s) => `ID:${s.id}\nTítulo:${s.title}\nAutor:${s.author || "-"}\nLetra:${lyricsAsPlainText(s).slice(0, 400) || "(sin letra)"}`)
+    .join("\n---\n");
+
+  const prompt = `Sos un director musical armando el orden de un show en vivo.
+La canción anterior fue "${prevSong.title}"${prevSong.author ? ` de ${prevSong.author}` : ""}.
+Letra:
+${lyricsAsPlainText(prevSong).slice(0, 600) || "(sin letra registrada)"}
+
+Analizá el significado, el mensaje o la temática de esa letra y elegí la mejor canción de la siguiente lista de candidatas para continuar la sesión en vivo de manera fluida y con sentido temático:
+${list}
+
+Devolvé ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto ni Markdown adicional):
+{"songId": "ID_ELEGIDO", "reason": "una frase breve en español explicando la conexión temática"}`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      })
+    }
+  );
+
+  if (!response.ok) throw new Error("No se pudo conectar con Gemini");
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  return safeParseJSON(text);
+}
+
 function safeParseJSON(text) {
   try {
     if (!text) return null;
