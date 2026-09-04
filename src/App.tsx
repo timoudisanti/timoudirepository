@@ -1402,7 +1402,16 @@ export default function App() {
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap');
+/* Bloqueo estricto de zoom en iOS Safari */
+input, select, textarea {
+  font-size: 16px !important;
+  touch-action: manipulation;
+}
 
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
 :root {
   --bg: #ffffff;
   --bg-elev: #f2f2f4;
