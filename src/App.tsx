@@ -1465,8 +1465,27 @@ html, body {
 .search-bar input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 16px; font-family: inherit; }
 .search-bar input::placeholder { color: var(--text-faint); }
 
-.filter-row { display: flex; gap: 8px; margin-top: 10px; }
-.filter-row select { flex: 1; background: var(--bg-elev); border: 1px solid var(--line); color: var(--text-dim); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 16px; font-family: inherit; }
+.filter-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.filter-row select {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  border-radius: var(--radius-sm);
+  padding: 8px 6px;
+  font-size: 16px !important;
+  font-family: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
+}
 
 .btn { display: inline-flex; align-items: center; gap: 6px; justify-content: center; border: none; border-radius: var(--radius-sm); padding: 10px 14px; font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; }
 .btn:disabled { opacity: 0.5; cursor: default; }
@@ -1548,7 +1567,7 @@ html, body {
 
 .option-row { width: 100%; display: flex; align-items: center; gap: 12px; background: none; border: none; border-bottom: 1px solid var(--line); padding: 12px 4px; text-align: left; cursor: pointer; font-family: inherit; color: var(--text); }
 .option-row:last-child { border-bottom: none; }
-.option-icon { width: 32px; height: 32px; border-radius: 9px; background: var(--bg-elev); display: flex; align-items: center; justify-content: center; color: var(--text); flex-shrink: 0; }
+.option-icon { width: 32px; height: 32px; border-radius: 99px; background: var(--bg-elev); display: flex; align-items: center; justify-content: center; color: var(--text); flex-shrink: 0; }
 .option-title { font-size: 14.5px; font-weight: 600; color: var(--text); }
 .option-sub { font-size: 12.5px; color: var(--text-faint); margin-top: 2px; }
 .option-chevron { margin-left: auto; color: var(--text-faint); flex-shrink: 0; }
