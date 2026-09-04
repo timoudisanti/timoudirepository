@@ -37,9 +37,12 @@ const formatDate = (iso) => {
 const TEMPO_LABEL = { rapida: "↑ Rápida", lenta: "↓ Lenta" };
 
 const SECTION_TYPES = [
+  { key: "intro", label: "Intro" },
   { key: "estrofa", label: "Estrofa" },
+  { key: "precoro", label: "Precoro" },
   { key: "coro", label: "Coro" },
   { key: "puente", label: "Puente" },
+  { key: "instrumental", label: "Instrumental" },
 ];
 const SECTION_LABEL_BY_KEY = Object.fromEntries(SECTION_TYPES.map((t) => [t.key, t.label]));
 
@@ -76,12 +79,15 @@ function lyricsAsPlainText(song) {
 /* ---------------- Sheety API helpers ---------------- */
 
 function parseSongFromSheety(row) {
+  const parsedSections = safeParseJSON(row.sections);
+  const parsedKeys = safeParseJSON(row.keys);
+
   return {
     id: row.id,
     title: row.title || "",
     author: row.author || "",
-    keys: safeParseJSON(row.keys) || [{ tono: row.keys || "", cantante: "" }],
-    sections: safeParseJSON(row.sections) || [],
+    keys: parsedKeys || [{ tono: row.keys || "", cantante: "" }],
+    sections: parsedSections || (row.sections ? [{ id: "sheet-import", type: "estrofa", content: String(row.sections) }] : []),
     tempo: row.tempo || "rapida",
     youtube: row.youtube || "",
     createdAt: row.createdat || Date.now(),
@@ -235,10 +241,13 @@ function EmptyState({ icon, title, hint }) {
 /* ---------------- Song Detail Viewer Sheet ---------------- */
 
 function SongDetailSheet({ song, onClose, onEdit, onAddClick }) {
+  const primary = song.keys?.[0];
+  const fullTitle = `${song.title}${primary?.tono ? ` | ${primary.tono}` : ""}`;
   const sections = displaySections(song);
+
   return (
     <Sheet
-      title={song.title}
+      title={fullTitle}
       onClose={onClose}
       footer={
         <div className="footer-row">
@@ -467,8 +476,10 @@ function SongRow({ song, onView, onAddClick }) {
     <div className="song-row">
       <button className="song-row-main" onClick={() => onView(song)}>
         <div className="song-row-top">
-          <span className="song-title">{song.title}</span>
-          {primary?.tono && <span className="song-tono">{primary.tono}</span>}
+          <span className="song-title">
+            {song.title}
+            {primary?.tono ? <span className="song-tono"> | {primary.tono}</span> : null}
+          </span>
         </div>
         <div className="song-row-bottom">
           <span className="song-author">{song.author || "Autor desconocido"}</span>
@@ -546,8 +557,8 @@ function SearchSheet({ songs, onClose, onPick, excludeIds = [] }) {
             <button className="option-row" key={s.id} onClick={() => onPick(s)}>
               <div className="option-icon"><Music2 size={16} /></div>
               <div>
-                <div className="option-title">{s.title}</div>
-                <div className="option-sub">{s.author || "Autor desconocido"}{s.keys?.[0]?.tono ? ` · ${s.keys[0].tono}` : ""}</div>
+                <div className="option-title">{s.title}{s.keys?.[0]?.tono ? ` | ${s.keys[0].tono}` : ""}</div>
+                <div className="option-sub">{s.author || "Autor desconocido"}</div>
               </div>
               <ChevronRight size={16} className="option-chevron" />
             </button>
@@ -676,8 +687,8 @@ function SwipeToDeleteRow({ id, openId, setOpenId, onDelete, onTap, children }) 
 
 /* ---------------- Session song list ---------------- */
 
-const LONG_PRESS_MS = 550;
-const MOVE_CANCEL_PX = 10;
+const LONG_PRESS_MS = 400;
+const MOVE_CANCEL_PX = 18;
 const ROW_GAP = 8;
 
 function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, onRemove }) {
@@ -722,11 +733,14 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
     if (timersRef.current[id]) { clearTimeout(timersRef.current[id]); delete timersRef.current[id]; }
   };
 
-  const startDrag = (id) => {
+  const startDrag = (id, targetEl, pointerId) => {
     const node = rowRefs.current[id];
     if (!node) return;
     onToggleRow(null);
     setOpenSwipeId(null);
+    if (targetEl && targetEl.setPointerCapture) {
+      try { targetEl.setPointerCapture(pointerId); } catch (err) {}
+    }
     const rect = node.getBoundingClientRect();
     setDragState({ id, top: rect.top, left: rect.left, width: rect.width, height: rect.height, translateY: 0 });
     if (typeof navigator !== "undefined" && navigator.vibrate) {
@@ -737,11 +751,16 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
   const handlePointerDown = (id, e) => {
     if (dragState) return;
     if (openSwipeId && openSwipeId !== id) setOpenSwipeId(null);
-    gestureRef.current[id] = { mode: "pending", startX: e.clientX, startY: e.clientY };
+    const targetEl = e.currentTarget;
+    const pointerId = e.pointerId;
+    gestureRef.current[id] = { mode: "pending", startX: e.clientX, startY: e.clientY, targetEl, pointerId };
     clearTimerFor(id);
     timersRef.current[id] = setTimeout(() => {
       const g = gestureRef.current[id];
-      if (g && g.mode === "pending") { g.mode = "dragging-vertical"; startDrag(id); }
+      if (g && g.mode === "pending") {
+        g.mode = "dragging-vertical";
+        startDrag(id, targetEl, pointerId);
+      }
     }, LONG_PRESS_MS);
   };
 
@@ -800,13 +819,16 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
     }
   };
 
-  const handlePointerUp = (id) => {
+  const handlePointerUp = (id, e) => {
     const g = gestureRef.current[id];
     clearTimerFor(id);
     delete gestureRef.current[id];
     if (!g) return;
 
     if (g.mode === "dragging-vertical") {
+      if (e.currentTarget && e.currentTarget.releasePointerCapture) {
+        try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) {}
+      }
       setDragState(null);
       onReorderCommit(order);
       return;
@@ -855,7 +877,7 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
                 className="swipe-content"
                 onPointerDown={(e) => handlePointerDown(s.id, e)}
                 onPointerMove={(e) => handlePointerMove(s.id, e)}
-                onPointerUp={() => handlePointerUp(s.id)}
+                onPointerUp={(e) => handlePointerUp(s.id, e)}
                 onPointerCancel={() => handlePointerCancel(s.id)}
                 style={{ transform: `translateX(${swipeX}px)`, transition: isLiveSwiping ? "none" : "transform 200ms ease" }}
               >
@@ -920,7 +942,6 @@ export default function App() {
       const list = rawList.map(parseSessionFromSheety);
       setSessions(list);
     } catch (e) {
-      // Respaldo en localStorage si la segunda hoja falla o no existe
       try {
         const stored = localStorage.getItem("worshinotes:sessions");
         if (stored) setSessions(JSON.parse(stored));
@@ -1429,11 +1450,11 @@ const CSS = `
 .app-main { flex: 1; padding: 16px; }
 
 .search-bar { display: flex; align-items: center; gap: 8px; background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 10px 12px; color: var(--text-faint); }
-.search-bar input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 15px; font-family: inherit; }
+.search-bar input { flex: 1; background: none; border: none; outline: none; color: var(--text); font-size: 16px; font-family: inherit; }
 .search-bar input::placeholder { color: var(--text-faint); }
 
 .filter-row { display: flex; gap: 8px; margin-top: 10px; }
-.filter-row select { flex: 1; background: var(--bg-elev); border: 1px solid var(--line); color: var(--text-dim); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 13px; font-family: inherit; }
+.filter-row select { flex: 1; background: var(--bg-elev); border: 1px solid var(--line); color: var(--text-dim); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 16px; font-family: inherit; }
 
 .btn { display: inline-flex; align-items: center; gap: 6px; justify-content: center; border: none; border-radius: var(--radius-sm); padding: 10px 14px; font-size: 14px; font-weight: 600; font-family: inherit; cursor: pointer; }
 .btn:disabled { opacity: 0.5; cursor: default; }
@@ -1455,8 +1476,8 @@ const CSS = `
 .song-row { display: flex; align-items: stretch; gap: 4px; background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
 .song-row-main { flex: 1; text-align: left; background: none; border: none; padding: 12px 14px; cursor: pointer; font-family: inherit; color: var(--text); display: flex; flex-direction: column; gap: 4px; }
 .song-row-top { display: flex; align-items: baseline; gap: 8px; }
-.song-title { font-size: 16.5px; font-weight: 600; }
-.song-tono { color: var(--text); font-size: 13px; font-weight: 700; }
+.song-title { font-size: 16.5px; font-weight: 600; color: var(--text); }
+.song-tono { color: var(--text); font-size: 14px; font-weight: 700; }
 .song-row-bottom { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .song-author { color: var(--text-dim); font-size: 12.5px; }
 .song-singer { color: var(--text-faint); font-size: 12.5px; }
@@ -1478,7 +1499,7 @@ const CSS = `
 .sheet-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
 .sheet { background: var(--bg); width: 100%; max-width: 480px; max-height: 88vh; border-radius: 20px 20px 0 0; display: flex; flex-direction: column; overflow: hidden; border-top: 1px solid var(--line); }
 .sheet-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); }
-.sheet-header h2 { font-size: 17px; margin: 0; font-weight: 700; }
+.sheet-header h2 { font-size: 18px; margin: 0; font-weight: 700; color: #111111; word-break: break-word; }
 .sheet-body { padding: 16px 18px; overflow-y: auto; flex: 1; }
 .sheet-footer { padding: 12px 18px; border-top: 1px solid var(--line); }
 .sheet-divider { font-size: 12px; color: var(--text-faint); padding: 12px 2px 4px; }
@@ -1487,7 +1508,7 @@ const CSS = `
 .footer-spacer { flex: 1; }
 
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-size: 13px; color: var(--text-dim); }
-.field input, .field textarea { background: var(--bg-elev); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px; font-family: inherit; resize: vertical; }
+.field input, .field textarea { background: var(--bg-elev); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 16px; font-family: inherit; resize: vertical; }
 .field textarea { font-family: inherit; line-height: 1.5; }
 .form-error { background: var(--danger-dim); color: var(--danger); padding: 8px 12px; border-radius: var(--radius-sm); font-size: 13px; margin-bottom: 12px; }
 
@@ -1495,8 +1516,8 @@ const CSS = `
 .key-row { display: flex; flex-direction: column; gap: 6px; }
 .key-row-label { font-size: 12px; color: var(--text-faint); display: flex; justify-content: space-between; }
 .key-row-fields { display: flex; gap: 8px; }
-.key-tono { width: 72px; flex-shrink: 0; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius-sm); padding: 8px 10px; font-family: inherit; }
-.key-singer { flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius-sm); padding: 8px 10px; font-family: inherit; }
+.key-tono { width: 72px; flex-shrink: 0; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius-sm); padding: 8px 10px; font-family: inherit; font-size: 16px; }
+.key-singer { flex: 1; background: var(--bg); border: 1px solid var(--line); color: var(--text); border-radius: var(--radius-sm); padding: 8px 10px; font-family: inherit; font-size: 16px; }
 .add-key { margin-top: 2px; }
 
 .segmented { display: flex; background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
@@ -1509,14 +1530,14 @@ const CSS = `
 .section-item-head { display: flex; align-items: center; justify-content: space-between; }
 .section-item-label { font-size: 12.5px; font-weight: 700; color: var(--text); }
 .section-item-controls { display: flex; gap: 2px; }
-.section-item textarea { background: var(--bg-elev); }
+.section-item textarea { background: var(--bg-elev); font-size: 16px; }
 .add-section-row { display: flex; gap: 8px; flex-wrap: wrap; }
 .add-section-row .btn { flex: 1; min-width: 100px; }
 
 .option-row { width: 100%; display: flex; align-items: center; gap: 12px; background: none; border: none; border-bottom: 1px solid var(--line); padding: 12px 4px; text-align: left; cursor: pointer; font-family: inherit; color: var(--text); }
 .option-row:last-child { border-bottom: none; }
 .option-icon { width: 32px; height: 32px; border-radius: 9px; background: var(--bg-elev); display: flex; align-items: center; justify-content: center; color: var(--text); flex-shrink: 0; }
-.option-title { font-size: 14.5px; font-weight: 600; }
+.option-title { font-size: 14.5px; font-weight: 600; color: var(--text); }
 .option-sub { font-size: 12.5px; color: var(--text-faint); margin-top: 2px; }
 .option-chevron { margin-left: auto; color: var(--text-faint); flex-shrink: 0; }
 .pick-list { display: flex; flex-direction: column; }
@@ -1529,7 +1550,7 @@ const CSS = `
 .session-card { display: flex; align-items: center; gap: 12px; background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 13px 14px; cursor: pointer; font-family: inherit; color: var(--text); text-align: left; }
 .session-card-icon { width: 34px; height: 34px; border-radius: 10px; background: var(--bg-elev-2); color: var(--text); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .session-card-body { flex: 1; }
-.session-card-title { font-size: 15.5px; font-weight: 700; }
+.session-card-title { font-size: 15.5px; font-weight: 700; color: var(--text); }
 .session-card-sub { font-size: 12px; color: var(--text-faint); margin-top: 2px; }
 
 .session-editor-header { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
@@ -1546,7 +1567,7 @@ const CSS = `
 .session-row-head { display: flex; align-items: center; gap: 4px; }
 .session-number { width: 26px; height: 26px; border-radius: 50%; background: var(--bg-elev-2); color: var(--text); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; flex-shrink: 0; margin-left: 12px; }
 .session-row-title-btn { flex: 1; background: none; border: none; display: flex; align-items: center; justify-content: space-between; padding: 13px 14px; cursor: pointer; color: var(--text); font-family: inherit; text-align: left; gap: 8px; }
-.session-title-line { font-size: 16px; font-weight: 600; }
+.session-title-line { font-size: 16px; font-weight: 600; color: var(--text); }
 .session-tono { color: var(--text); font-weight: 700; }
 .session-author-line { font-size: 12.5px; color: var(--text-faint); margin-top: 2px; }
 .session-row-body { padding: 0 14px 16px; border-top: 1px solid var(--line); }
@@ -1564,7 +1585,7 @@ const CSS = `
 
 .suggest-card { margin-top: 12px; background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .suggest-card-head { display: flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12px; font-weight: 700; width: 100%; }
-.suggest-song-title { font-size: 16.5px; font-weight: 700; width: 100%; }
+.suggest-song-title { font-size: 16.5px; font-weight: 700; color: var(--text); width: 100%; }
 .suggest-song-author { font-size: 12.5px; color: var(--text-dim); margin-top: 1px; width: 100%; }
 .suggest-reason { font-size: 13px; color: var(--text-dim); margin: 8px 0 0; line-height: 1.5; width: 100%; }
 .suggest-actions { display: flex; gap: 8px; margin-top: 12px; width: 100%; }
