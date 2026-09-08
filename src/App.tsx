@@ -237,11 +237,11 @@ ${list}
 Devolvé ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto ni Markdown adicional):
 {"songId": "ID_ELEGIDO", "reason": "una frase breve en español explicando la conexión temática"}`;
 
-  const modelsToTry = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.5-flash"];
+  const modelsToTry = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
   let lastError = null;
 
   for (const model of modelsToTry) {
-    for (const apiVersion of ["v1", "v1beta"]) {
+    for (const apiVersion of ["v1beta", "v1"]) {
       try {
         const response = await fetch(
           `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${apiKey}`,
