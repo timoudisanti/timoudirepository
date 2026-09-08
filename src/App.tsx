@@ -7,7 +7,7 @@ import {
 
 /* ---------------------------------------------------------------
    Worshinotes — repertorio y setlists para músico de covers
-   Base de Datos: Google Apps Script Web App (canciones y sesiones)
+   Base de Datos: Google Apps Script Web App
 --------------------------------------------------------------- */
 
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxoHYqkco1fr-PxpxYfqhpCdBoYjMtHEYL2MhTzSbtnAC2hwwRof3WJYG8M6CERE6HI/exec";
@@ -82,7 +82,7 @@ function lyricsAsPlainText(song) {
 function parseSongFromSheety(row, idx) {
   const parsedSections = safeParseJSON(row.sections);
   const parsedKeys = safeParseJSON(row.keys);
-
+  
   const songId = (row.id !== undefined && row.id !== "" && row.id !== null)
     ? String(row.id)
     : `song-${idx + 1}`;
@@ -218,55 +218,51 @@ function localThemeSearch(query, songs) {
   return scored.map((x) => x.id);
 }
 
-/* ---------------- Gemini AI Helper Directo ---------------- */
-// Nota: Google va dando de baja modelos de Gemini con el tiempo (nos pasó con
-// gemini-1.5-flash). Si este modelo deja de funcionar, revisá el listado
-// vigente en https://ai.google.dev/gemini-api/docs/models y reemplazá el
-// nombre de acá abajo.
-const GEMINI_MODEL = "gemini-3.6-flash";
+/* ---------------- Groq AI Helper ---------------- */
 
-async function aiSuggestNextGemini(prevSong, candidates, apiKey) {
+async function aiSuggestNextGroq(prevSong, candidates, apiKey) {
   const pool = candidates.slice(0, 50);
   const list = pool
-    .map((s) => `ID:${s.id}\nTítulo:${s.title}\nAutor:${s.author || "-"}\nLetra:${lyricsAsPlainText(s).slice(0, 400) || "(sin letra)"}`)
-    .join("\n---\n");
+    .map((s) => `ID:${s.id} | Título:${s.title} | Autor:${s.author || "-"} | Letra:${lyricsAsPlainText(s).slice(0, 350) || "(sin letra)"}`)
+    .join("\n");
 
-  const prompt = `Sos un director musical armando el orden de un show en vivo.
+  const prompt = `Sos un director musical armando un setlist en vivo.
 La canción anterior fue "${prevSong.title}"${prevSong.author ? ` de ${prevSong.author}` : ""}.
-Letra:
-${lyricsAsPlainText(prevSong).slice(0, 600) || "(sin letra registrada)"}
+Letra previa:
+${lyricsAsPlainText(prevSong).slice(0, 500) || "(sin letra)"}
 
-Analizá el significado, el mensaje o la temática de esa letra y elegí la mejor canción de la siguiente lista de candidatas para continuar la sesión en vivo de manera fluida y con sentido temático:
-${list}
+Analizá la temática, mensaje o intención y elegí la mejor canción de la lista candidata para continuar de forma fluida.
+Devolvé ÚNICAMENTE un JSON válido con esta estructura:
+{"songId": "ID_ELEGIDO", "reason": "una frase breve en español explicando el motivo temático"}
 
-Devolvé ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto ni Markdown adicional):
-{"songId": "ID_ELEGIDO", "reason": "una frase breve en español explicando la conexión temática"}`;
+Candidatas:
+${list}`;
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json"
-        }
-      })
-    }
-  );
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${apiKey}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "llama-3.3-70b-versatile",
+      messages: [{ role: "user", content: prompt }],
+      response_format: { type: "json_object" },
+      temperature: 0.3
+    })
+  });
 
   if (!response.ok) {
     const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `Error ${response.status}: ${response.statusText}`);
+    throw new Error(errData.error?.message || `Error HTTP ${response.status}`);
   }
 
   const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!text) throw new Error("Gemini no devolvió ningún texto.");
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error("Groq no devolvió texto.");
 
   const parsed = safeParseJSON(text);
-  if (!parsed) throw new Error("No se pudo interpretar el JSON devuelto por Gemini.");
+  if (!parsed) throw new Error("Respuesta inválida de Groq.");
 
   return parsed;
 }
@@ -1109,9 +1105,6 @@ export default function App() {
     } catch (e) {}
   };
 
-  // Actualiza solo el estado local (sin red). Usar en campos de texto donde el
-  // usuario tipea letra por letra (título, fecha), para no mandar un POST por
-  // cada tecla. Sincronizar después con syncActiveSessionToServer (ej: onBlur).
   const patchSessionLocal = (patch) => {
     if (!activeSession) return;
     const updated = { ...activeSession, ...patch };
@@ -1119,8 +1112,6 @@ export default function App() {
     persistSessionsLocally(nextSessions);
   };
 
-  // Toma el valor MÁS RECIENTE de la sesión activa (evita closures viejas) y
-  // lo manda al servidor una sola vez.
   const syncActiveSessionToServer = () => {
     setSessions((prev) => {
       const current = prev.find((s) => String(s.id) === String(activeSessionId));
@@ -1212,7 +1203,7 @@ export default function App() {
     setSuggest(null);
   };
 
-  const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+  const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
   const runSuggest = async () => {
     setSessionAddMenuOpen(false);
@@ -1226,39 +1217,24 @@ export default function App() {
       return;
     }
 
-    // Intenta primero con Gemini (si hay API key configurada). Si falla por
-    // cualquier motivo (modelo dado de baja, sin cuota, sin key, sin red),
-    // cae automáticamente al motor local de coincidencia de palabras para
-    // que "Sugerir canción" nunca deje de funcionar.
-    if (GEMINI_API_KEY) {
-      try {
-        const res = await aiSuggestNextGemini(prev, candidates, GEMINI_API_KEY);
-        const song = res?.songId ? songs.find((s) => String(s.id) === String(res.songId)) : null;
-        if (song) {
-          setSuggest({ result: { song, reason: res.reason || "Recomendada por temática." }, error: "" });
-          return;
-        }
-        throw new Error(`Gemini eligió el ID "${res?.songId}" pero no coincide con ninguna canción de la lista.`);
-      } catch (e) {
-        const fallback = localSuggestNext(prev, candidates);
-        if (fallback) {
-          setSuggest({
-            result: { song: fallback.song, reason: `${fallback.reason} (sugerencia local, Gemini no respondió: ${e.message})` },
-            error: "",
-          });
-        } else {
-          setSuggest({ result: null, error: `Error Gemini: ${e.message}` });
-        }
-        return;
-      }
+    if (!GROQ_API_KEY) {
+      setSuggest({ result: null, error: "Error: La variable VITE_GROQ_API_KEY no está definida en Vercel." });
+      return;
     }
 
-    // Sin API key configurada: usar directamente el motor local, sin mostrar error.
-    const local = localSuggestNext(prev, candidates);
-    if (local) {
-      setSuggest({ result: local, error: "" });
-    } else {
-      setSuggest({ result: null, error: "No se pudo generar una sugerencia." });
+    setSuggest({ result: null, error: "" });
+
+    try {
+      const res = await aiSuggestNextGroq(prev, candidates, GROQ_API_KEY);
+      const song = res?.songId ? songs.find((s) => String(s.id) === String(res.songId)) : null;
+
+      if (song) {
+        setSuggest({ result: { song, reason: res.reason || "Recomendada por temática." }, error: "" });
+      } else {
+        throw new Error(`Groq eligió el ID "${res?.songId}" pero no coincide con ninguna canción de la lista.`);
+      }
+    } catch (e) {
+      setSuggest({ result: null, error: `Error Groq: ${e.message}` });
     }
   };
 
