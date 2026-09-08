@@ -238,14 +238,14 @@ Devolvé ÚNICAMENTE un JSON válido con esta estructura:
 Candidatas:
 ${list}`;
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  cconst response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: "llama-3.3-70b-versatile",
+      model: "llama-3.1-8b-instant",
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
       temperature: 0.3
