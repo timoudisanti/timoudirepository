@@ -1244,7 +1244,7 @@ export default function App() {
 
       <header className="app-header">
         <div className="staff-lines" aria-hidden="true"><span /><span /><span /></div>
-        <h1 className="wordmark">Worshinotes</h1>
+        <h1 className="wordmark">Worshinotes test</h1>
         <button className="icon-btn refresh-icon" onClick={() => { loadSongs(); loadSessions(); }} title="Actualizar datos">
           <RefreshCw size={16} />
         </button>
