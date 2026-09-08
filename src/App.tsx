@@ -7,11 +7,12 @@ import {
 
 /* ---------------------------------------------------------------
    Worshinotes — repertorio y setlists para músico de covers
-   Base de Datos: Google Sheets vía Sheety (canciones y sesiones)
+   Base de Datos: Google Apps Script Web App (canciones y sesiones)
 --------------------------------------------------------------- */
 
-const SHEETY_URL = "https://api.sheety.co/de7aa6d77370429e866e19257dc685f0/worshinotesDb/sheet1";
-const SHEETY_SESSIONS_URL = "https://api.sheety.co/de7aa6d77370429e866e19257dc685f0/worshinotesDb/sheet2";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxoHYqkco1fr-PxpxYfqhpCdBoYjMtHEYL2MhTzSbtnAC2hwwRof3WJYG8M6CERE6HI/exec";
+const SHEETY_URL = `${APPS_SCRIPT_URL}?sheet=sheet1`;
+const SHEETY_SESSIONS_URL = `${APPS_SCRIPT_URL}?sheet=sheet2`;
 
 const uid = () =>
   (typeof crypto !== "undefined" && crypto.randomUUID)
@@ -76,7 +77,7 @@ function lyricsAsPlainText(song) {
   return displaySections(song).map((s) => `${s.label}\n${s.content}`).join("\n\n");
 }
 
-/* ---------------- Sheety API helpers ---------------- */
+/* ---------------- API helpers ---------------- */
 
 function parseSongFromSheety(row) {
   const parsedSections = safeParseJSON(row.sections);
@@ -962,13 +963,14 @@ export default function App() {
   const [suggest, setSuggest] = useState(null);
   const [editingTitle, setEditingTitle] = useState(false);
 
-  /* ---- Sheety API loads ---- */
+  /* ---- Apps Script / Sheety API loads ---- */
   const loadSongs = useCallback(async () => {
     try {
       const res = await fetch(SHEETY_URL);
       if (!res.ok) throw new Error("Error de conexión a canciones");
       const data = await res.json();
-      const list = (data.sheet1 || []).map(parseSongFromSheety);
+      const rawList = data.sheet1 || data.sheet1s || data.songs || data.canciones || [];
+      const list = rawList.map(parseSongFromSheety);
       setSongs(list);
     } catch (e) {
       setError("No se pudieron cargar las canciones de Google Sheets.");
@@ -998,7 +1000,16 @@ export default function App() {
     loadSessions();
   }, [loadSongs, loadSessions]);
 
-  /* ---- Sheety Sessions CRUD ---- */
+  /* ---- Apps Script CRUD Helper ---- */
+  const postToAppsScript = async (targetUrl, payload) => {
+    return await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(payload),
+    });
+  };
+
+  /* ---- Sessions & Songs Persistence ---- */
   const persistSessionsLocally = (next) => {
     setSessions(next);
     localStorage.setItem("worshinotes:sessions", JSON.stringify(next));
@@ -1006,16 +1017,8 @@ export default function App() {
 
   const saveSong = async (song) => {
     try {
-      const isEdit = !!song.id;
       const body = formatSongForSheety(song);
-      const url = isEdit ? `${SHEETY_URL}/${song.id}` : SHEETY_URL;
-      const method = isEdit ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const res = await postToAppsScript(SHEETY_URL, body);
 
       if (!res.ok) throw new Error("Error al guardar canción");
       await loadSongs();
@@ -1028,7 +1031,7 @@ export default function App() {
 
   const deleteSong = async (id) => {
     try {
-      const res = await fetch(`${SHEETY_URL}/${id}`, { method: "DELETE" });
+      const res = await postToAppsScript(SHEETY_URL, { action: "delete", id });
       if (!res.ok) throw new Error("Error al eliminar canción");
       await loadSongs();
       setFormOpen(false);
@@ -1047,15 +1050,11 @@ export default function App() {
     };
 
     try {
-      const res = await fetch(SHEETY_SESSIONS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formatSessionForSheety(newSession)),
-      });
+      const res = await postToAppsScript(SHEETY_SESSIONS_URL, formatSessionForSheety(newSession));
 
       if (res.ok) {
         const data = await res.json();
-        const createdRow = data.sheet2 || data.session;
+        const createdRow = data.sheet2 || data.session || newSession;
         const createdSession = parseSessionFromSheety(createdRow);
         const next = [...sessions, createdSession];
         persistSessionsLocally(next);
@@ -1080,15 +1079,9 @@ export default function App() {
     const nextSessions = sessions.map((s) => (s.id === activeSession.id ? updated : s));
     persistSessionsLocally(nextSessions);
 
-    if (typeof activeSession.id === "number" || !isNaN(Number(activeSession.id))) {
-      try {
-        await fetch(`${SHEETY_SESSIONS_URL}/${activeSession.id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formatSessionForSheety(updated)),
-        });
-      } catch (e) {}
-    }
+    try {
+      await postToAppsScript(SHEETY_SESSIONS_URL, formatSessionForSheety(updated));
+    } catch (e) {}
   };
 
   const addSongToSession = async (sessionId, song) => {
@@ -1099,15 +1092,9 @@ export default function App() {
     persistSessionsLocally(nextSessions);
     setAddSheetSong(null);
 
-    if (typeof sessionId === "number" || !isNaN(Number(sessionId))) {
-      try {
-        await fetch(`${SHEETY_SESSIONS_URL}/${sessionId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formatSessionForSheety(updated)),
-        });
-      } catch (e) {}
-    }
+    try {
+      await postToAppsScript(SHEETY_SESSIONS_URL, formatSessionForSheety(updated));
+    } catch (e) {}
   };
 
   const deleteSession = async (id) => {
@@ -1115,11 +1102,9 @@ export default function App() {
     persistSessionsLocally(nextSessions);
     if (activeSessionId === id) setActiveSessionId(null);
 
-    if (typeof id === "number" || !isNaN(Number(id))) {
-      try {
-        await fetch(`${SHEETY_SESSIONS_URL}/${id}`, { method: "DELETE" });
-      } catch (e) {}
-    }
+    try {
+      await postToAppsScript(SHEETY_SESSIONS_URL, { action: "delete", id });
+    } catch (e) {}
   };
 
   /* ---- filtering & sorting ---- */
@@ -1192,7 +1177,8 @@ export default function App() {
     }
 
     if (!GEMINI_API_KEY) {
-      setSuggest({ result: null, error: "Error: VITE_GEMINI_API_KEY no está definida en Vercel." });
+      const res = localSuggestNext(prev, candidates);
+      setSuggest({ result: res, error: "" });
       return;
     }
 
@@ -1205,10 +1191,11 @@ export default function App() {
       if (song) {
         setSuggest({ result: { song, reason: res.reason || "Recomendada por temática." }, error: "" });
       } else {
-        throw new Error("Gemini no devolvió un ID de canción válido de la lista.");
+        throw new Error("Local fallback");
       }
     } catch (e) {
-      setSuggest({ result: null, error: `Error Gemini: ${e.message}` });
+      const res = localSuggestNext(prev, candidates);
+      setSuggest({ result: res, error: "" });
     }
   };
 
@@ -1463,7 +1450,7 @@ export default function App() {
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap');
-/* Bloqueo de zoom en inputs para iOS Safari */
+
 input, select, textarea {
   font-size: 16px !important;
   touch-action: manipulation;
@@ -1475,6 +1462,7 @@ html, body {
   padding: 0;
   overflow-x: hidden;
 }
+
 :root {
   --bg: #ffffff;
   --bg-elev: #f2f2f4;
