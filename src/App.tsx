@@ -238,33 +238,49 @@ Devolvé ÚNICAMENTE un JSON válido con esta estructura:
 Candidatas:
 ${list}`;
 
-  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: "llama-3.1-8b-instant",
-      messages: [{ role: "user", content: prompt }],
-      response_format: { type: "json_object" },
-      temperature: 0.3
-    })
-  });
+  const models = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "llama3-8b-8192",
+    "mixtral-8x7b-32768",
+    "gemma2-9b-it"
+  ];
 
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `Error HTTP ${response.status}`);
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model,
+          messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_object" },
+          temperature: 0.3
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const text = data.choices?.[0]?.message?.content;
+        if (!text) continue;
+
+        const parsed = safeParseJSON(text);
+        if (parsed?.songId) return parsed;
+      } else {
+        const errData = await response.json().catch(() => ({}));
+        lastError = new Error(errData.error?.message || `Error HTTP ${response.status}`);
+      }
+    } catch (err) {
+      lastError = err;
+    }
   }
 
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content;
-  if (!text) throw new Error("Groq no devolvió texto.");
-
-  const parsed = safeParseJSON(text);
-  if (!parsed) throw new Error("Respuesta inválida de Groq.");
-
-  return parsed;
+  throw lastError || new Error("No se pudo conectar con ningún modelo de Groq.");
 }
 
 /* ---------------- Small UI atoms ---------------- */
@@ -1342,12 +1358,12 @@ export default function App() {
                   </button>
                 )}
                 <input
-                  type="date"
-                  className="session-date-input"
-                  value={activeSession.date}
-                  onChange={(e) => patchSessionLocal({ date: e.target.value })}
-                  onBlur={() => syncActiveSessionToServer()}
-                />
+  type="date"
+  className="session-date-input"
+  value={(activeSession.date || "").slice(0, 10)}
+  onChange={(e) => patchSessionLocal({ date: e.target.value })}
+  onBlur={() => syncActiveSessionToServer()}
+/>
               </div>
               <button className="icon-btn danger" onClick={() => deleteSession(activeSession.id)} aria-label="Eliminar sesión">
                 <Trash2 size={18} />
