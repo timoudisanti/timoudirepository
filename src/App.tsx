@@ -223,7 +223,7 @@ function localThemeSearch(query, songs) {
 // gemini-1.5-flash). Si este modelo deja de funcionar, revisá el listado
 // vigente en https://ai.google.dev/gemini-api/docs/models y reemplazá el
 // nombre de acá abajo.
-const GEMINI_MODEL = "gemini-2.5-flash";
+const GEMINI_MODEL = "gemini-3.6-flash";
 
 async function aiSuggestNextGemini(prevSong, candidates, apiKey) {
   const pool = candidates.slice(0, 50);
@@ -1109,6 +1109,28 @@ export default function App() {
     } catch (e) {}
   };
 
+  // Actualiza solo el estado local (sin red). Usar en campos de texto donde el
+  // usuario tipea letra por letra (título, fecha), para no mandar un POST por
+  // cada tecla. Sincronizar después con syncActiveSessionToServer (ej: onBlur).
+  const patchSessionLocal = (patch) => {
+    if (!activeSession) return;
+    const updated = { ...activeSession, ...patch };
+    const nextSessions = sessions.map((s) => (String(s.id) === String(activeSession.id) ? updated : s));
+    persistSessionsLocally(nextSessions);
+  };
+
+  // Toma el valor MÁS RECIENTE de la sesión activa (evita closures viejas) y
+  // lo manda al servidor una sola vez.
+  const syncActiveSessionToServer = () => {
+    setSessions((prev) => {
+      const current = prev.find((s) => String(s.id) === String(activeSessionId));
+      if (current) {
+        postToAppsScript(SHEETY_SESSIONS_URL, formatSessionForSheety(current)).catch(() => {});
+      }
+      return prev;
+    });
+  };
+
   const addSongToSession = async (sessionId, song) => {
     const targetSession = sessions.find((s) => String(s.id) === String(sessionId));
     if (!targetSession) return;
@@ -1334,16 +1356,22 @@ export default function App() {
                     className="session-title-input"
                     placeholder={formatDate(activeSession.date)}
                     value={activeSession.title}
-                    onChange={(e) => updateActiveSession({ title: e.target.value })}
-                    onBlur={() => setEditingTitle(false)}
-                    onKeyDown={(e) => e.key === "Enter" && setEditingTitle(false)}
+                    onChange={(e) => patchSessionLocal({ title: e.target.value })}
+                    onBlur={() => { setEditingTitle(false); syncActiveSessionToServer(); }}
+                    onKeyDown={(e) => e.key === "Enter" && e.target.blur()}
                   />
                 ) : (
                   <button className="session-title-display" onClick={() => setEditingTitle(true)}>
                     {activeSession.title || formatDate(activeSession.date)} <Pencil size={13} />
                   </button>
                 )}
-                <input type="date" className="session-date-input" value={activeSession.date} onChange={(e) => updateActiveSession({ date: e.target.value })} />
+                <input
+                  type="date"
+                  className="session-date-input"
+                  value={activeSession.date}
+                  onChange={(e) => patchSessionLocal({ date: e.target.value })}
+                  onBlur={() => syncActiveSessionToServer()}
+                />
               </div>
               <button className="icon-btn danger" onClick={() => deleteSession(activeSession.id)} aria-label="Eliminar sesión">
                 <Trash2 size={18} />
