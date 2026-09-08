@@ -82,7 +82,7 @@ function lyricsAsPlainText(song) {
 function parseSongFromSheety(row, idx) {
   const parsedSections = safeParseJSON(row.sections);
   const parsedKeys = safeParseJSON(row.keys);
-  
+
   const songId = (row.id !== undefined && row.id !== "" && row.id !== null)
     ? String(row.id)
     : `song-${idx + 1}`;
@@ -219,6 +219,11 @@ function localThemeSearch(query, songs) {
 }
 
 /* ---------------- Gemini AI Helper Directo ---------------- */
+// Nota: Google va dando de baja modelos de Gemini con el tiempo (nos pasó con
+// gemini-1.5-flash). Si este modelo deja de funcionar, revisá el listado
+// vigente en https://ai.google.dev/gemini-api/docs/models y reemplazá el
+// nombre de acá abajo.
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 async function aiSuggestNextGemini(prevSong, candidates, apiKey) {
   const pool = candidates.slice(0, 50);
@@ -238,7 +243,7 @@ Devolvé ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto ni Ma
 {"songId": "ID_ELEGIDO", "reason": "una frase breve en español explicando la conexión temática"}`;
 
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1199,24 +1204,39 @@ export default function App() {
       return;
     }
 
-    if (!GEMINI_API_KEY) {
-      setSuggest({ result: null, error: "Error: La variable VITE_GEMINI_API_KEY no está definida en Vercel." });
-      return;
+    // Intenta primero con Gemini (si hay API key configurada). Si falla por
+    // cualquier motivo (modelo dado de baja, sin cuota, sin key, sin red),
+    // cae automáticamente al motor local de coincidencia de palabras para
+    // que "Sugerir canción" nunca deje de funcionar.
+    if (GEMINI_API_KEY) {
+      try {
+        const res = await aiSuggestNextGemini(prev, candidates, GEMINI_API_KEY);
+        const song = res?.songId ? songs.find((s) => String(s.id) === String(res.songId)) : null;
+        if (song) {
+          setSuggest({ result: { song, reason: res.reason || "Recomendada por temática." }, error: "" });
+          return;
+        }
+        throw new Error(`Gemini eligió el ID "${res?.songId}" pero no coincide con ninguna canción de la lista.`);
+      } catch (e) {
+        const fallback = localSuggestNext(prev, candidates);
+        if (fallback) {
+          setSuggest({
+            result: { song: fallback.song, reason: `${fallback.reason} (sugerencia local, Gemini no respondió: ${e.message})` },
+            error: "",
+          });
+        } else {
+          setSuggest({ result: null, error: `Error Gemini: ${e.message}` });
+        }
+        return;
+      }
     }
 
-    setSuggest({ result: null, error: "" });
-
-    try {
-      const res = await aiSuggestNextGemini(prev, candidates, GEMINI_API_KEY);
-      const song = res?.songId ? songs.find((s) => String(s.id) === String(res.songId)) : null;
-
-      if (song) {
-        setSuggest({ result: { song, reason: res.reason || "Recomendada por temática." }, error: "" });
-      } else {
-        throw new Error(`Gemini eligió el ID "${res?.songId}" pero no coincide con ninguna canción de la lista.`);
-      }
-    } catch (e) {
-      setSuggest({ result: null, error: `Error Gemini: ${e.message}` });
+    // Sin API key configurada: usar directamente el motor local, sin mostrar error.
+    const local = localSuggestNext(prev, candidates);
+    if (local) {
+      setSuggest({ result: local, error: "" });
+    } else {
+      setSuggest({ result: null, error: "No se pudo generar una sugerencia." });
     }
   };
 
