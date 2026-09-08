@@ -1000,7 +1000,7 @@ export default function App() {
   /* ---- Apps Script / Sheety API loads ---- */
   const loadSongs = useCallback(async () => {
     try {
-      const res = await fetch(SHEETY_URL);
+      const res = await fetch(`${SHEETY_URL}&_t=${Date.now()}`);
       if (!res.ok) throw new Error("Error de conexión a canciones");
       const data = await res.json();
       const rawList = data.sheet1 || data.sheet1s || data.songs || data.canciones || [];
@@ -1015,7 +1015,7 @@ export default function App() {
 
   const loadSessions = useCallback(async () => {
     try {
-      const res = await fetch(SHEETY_SESSIONS_URL);
+      const res = await fetch(`${SHEETY_SESSIONS_URL}&_t=${Date.now()}`);
       if (!res.ok) throw new Error("Error de conexión a sesiones");
       const data = await res.json();
       const rawList = data.sheet2 || data.sheet2s || data.sessions || data.sesiones || [];
