@@ -46,43 +46,6 @@ const SECTION_TYPES = [
 ];
 const SECTION_LABEL_BY_KEY = Object.fromEntries(SECTION_TYPES.map((t) => [t.key, t.label]));
 
-async function aiSuggestNextGemini(prevSong, candidates, apiKey) {
-  const pool = candidates.slice(0, 50);
-  const list = pool
-    .map((s) => `ID:${s.id}\nTítulo:${s.title}\nAutor:${s.author || "-"}\nLetra:${lyricsAsPlainText(s).slice(0, 400) || "(sin letra)"}`)
-    .join("\n---\n");
-
-  const prompt = `Sos un director musical armando el orden de un show en vivo.
-La canción anterior fue "${prevSong.title}"${prevSong.author ? ` de ${prevSong.author}` : ""}.
-Letra:
-${lyricsAsPlainText(prevSong).slice(0, 600) || "(sin letra registrada)"}
-
-Analizá el significado, el mensaje o la temática de esa letra y elegí la mejor canción de la siguiente lista de candidatas para continuar la sesión en vivo de manera fluida y con sentido temático:
-${list}
-
-Devolvé ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto ni Markdown adicional):
-{"songId": "ID_ELEGIDO", "reason": "una frase breve en español explicando la conexión temática"}`;
-
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json"
-        }
-      })
-    }
-  );
-
-  if (!response.ok) throw new Error("No se pudo conectar con Gemini");
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  return safeParseJSON(text);
-}
-
 function safeParseJSON(text) {
   try {
     if (!text) return null;
@@ -169,6 +132,7 @@ function formatSessionForSheety(session) {
 /* ---------------- Motor propio de coincidencias ---------------- */
 
 const STOPWORDS_ES = new Set([
+  "estrofa", "coro", "puente", "intro", "precoro", "instrumental", "letra",
   "de","la","que","el","en","y","a","los","del","se","las","por","un","para","con","no","una",
   "su","al","lo","como","mas","pero","sus","le","ya","o","este","si","porque","esta","entre",
   "cuando","muy","sin","sobre","tambien","me","hasta","hay","donde","quien","desde","todo","nos",
@@ -240,6 +204,49 @@ function localThemeSearch(query, songs) {
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score);
   return scored.map((x) => x.id);
+}
+
+/* ---------------- Gemini AI Helper ---------------- */
+
+async function aiSuggestNextGemini(prevSong, candidates, apiKey) {
+  const pool = candidates.slice(0, 50);
+  const list = pool
+    .map((s) => `ID:${s.id}\nTítulo:${s.title}\nAutor:${s.author || "-"}\nLetra:${lyricsAsPlainText(s).slice(0, 400) || "(sin letra)"}`)
+    .join("\n---\n");
+
+  const prompt = `Sos un director musical armando el orden de un show en vivo.
+La canción anterior fue "${prevSong.title}"${prevSong.author ? ` de ${prevSong.author}` : ""}.
+Letra:
+${lyricsAsPlainText(prevSong).slice(0, 600) || "(sin letra registrada)"}
+
+Analizá el significado, el mensaje o la temática de esa letra y elegí la mejor canción de la siguiente lista de candidatas para continuar la sesión en vivo de manera fluida y con sentido temático:
+${list}
+
+Devolvé ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto ni Markdown adicional):
+{"songId": "ID_ELEGIDO", "reason": "una frase breve en español explicando la conexión temática"}`;
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      })
+    }
+  );
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error?.message || `HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  return safeParseJSON(text);
 }
 
 /* ---------------- Small UI atoms ---------------- */
@@ -1171,43 +1178,39 @@ export default function App() {
     setSuggest(null);
   };
 
-  // Reemplazá TU_API_KEY_AQUÍ por la clave de Google AI Studio o usá import.meta.env.VITE_GEMINI_API_KEY
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+  const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 
-const runSuggest = async () => {
-  setSessionAddMenuOpen(false);
-  const prev = activeSessionSongs[activeSessionSongs.length - 1];
-  if (!prev) return;
+  const runSuggest = async () => {
+    setSessionAddMenuOpen(false);
+    const prev = activeSessionSongs[activeSessionSongs.length - 1];
+    if (!prev) return;
 
-  const candidates = songs.filter((s) => !activeSession.songIds.includes(s.id));
-  if (candidates.length === 0) {
-    setSuggest({ result: null, error: "No hay más canciones en tu repertorio para sugerir." });
-    return;
-  }
+    const candidates = songs.filter((s) => !activeSession.songIds.includes(s.id));
+    if (candidates.length === 0) {
+      setSuggest({ result: null, error: "No hay más canciones en tu repertorio para sugerir." });
+      return;
+    }
 
-  setSuggest({ loading: true, result: null, error: "" });
+    if (!GEMINI_API_KEY) {
+      setSuggest({ result: null, error: "Error: VITE_GEMINI_API_KEY no está definida en Vercel." });
+      return;
+    }
 
-  try {
-    if (GEMINI_API_KEY && GEMINI_API_KEY !== "TU_API_KEY_AQUÍ") {
+    setSuggest({ result: null, error: "" });
+
+    try {
       const res = await aiSuggestNextGemini(prev, candidates, GEMINI_API_KEY);
       const song = res?.songId ? songs.find((s) => String(s.id) === String(res.songId)) : null;
-      
+
       if (song) {
         setSuggest({ result: { song, reason: res.reason || "Recomendada por temática." }, error: "" });
-        return;
+      } else {
+        throw new Error("Gemini no devolvió un ID de canción válido de la lista.");
       }
+    } catch (e) {
+      setSuggest({ result: null, error: `Error Gemini: ${e.message}` });
     }
-    throw new Error("Usar respaldo local");
-  } catch (e) {
-    // Respaldo inteligente local si falla la red o no hay clave
-    const res = localSuggestNext(prev, candidates);
-    if (res) {
-      setSuggest({ result: res, error: "" });
-    } else {
-      setSuggest({ result: null, error: "No se pudo generar una sugerencia." });
-    }
-  }
-};
+  };
 
   return (
     <div className="app">
