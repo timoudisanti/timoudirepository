@@ -238,7 +238,7 @@ Devolvé ÚNICAMENTE un JSON válido con esta estructura:
 Candidatas:
 ${list}`;
 
-  cconst response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+  const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
