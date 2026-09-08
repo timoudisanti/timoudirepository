@@ -79,12 +79,17 @@ function lyricsAsPlainText(song) {
 
 /* ---------------- API helpers ---------------- */
 
-function parseSongFromSheety(row) {
+function parseSongFromSheety(row, idx) {
   const parsedSections = safeParseJSON(row.sections);
   const parsedKeys = safeParseJSON(row.keys);
+  
+  // Garantizar un ID único incluso si Google Sheets no tiene la columna id
+  const songId = (row.id !== undefined && row.id !== "" && row.id !== null)
+    ? String(row.id)
+    : `song-${idx + 1}`;
 
   return {
-    id: row.id,
+    id: songId,
     title: row.title || "",
     author: row.author || "",
     keys: parsedKeys || [{ tono: row.keys || "", cantante: "" }],
@@ -98,6 +103,7 @@ function parseSongFromSheety(row) {
 function formatSongForSheety(song) {
   return {
     sheet1: {
+      id: song.id,
       title: song.title || "",
       author: song.author || "",
       keys: JSON.stringify(song.keys || []),
@@ -109,12 +115,17 @@ function formatSongForSheety(song) {
   };
 }
 
-function parseSessionFromSheety(row) {
+function parseSessionFromSheety(row, idx) {
+  const rawIds = safeParseJSON(row.songids) || safeParseJSON(row.songIds) || [];
+  const sessionId = (row.id !== undefined && row.id !== "" && row.id !== null)
+    ? String(row.id)
+    : `session-${idx + 1}`;
+
   return {
-    id: row.id,
+    id: sessionId,
     title: row.title || "",
     date: row.date || todayISO(),
-    songIds: safeParseJSON(row.songids) || safeParseJSON(row.songIds) || [],
+    songIds: Array.isArray(rawIds) ? rawIds.map(String) : [],
     createdAt: row.createdat || Date.now(),
   };
 }
@@ -122,6 +133,7 @@ function parseSessionFromSheety(row) {
 function formatSessionForSheety(session) {
   return {
     sheet2: {
+      id: session.id,
       title: session.title || "",
       date: session.date || todayISO(),
       songids: JSON.stringify(session.songIds || []),
@@ -384,7 +396,7 @@ function SongForm({ initial, onSave, onDelete, onClose }) {
     setSaving(true);
     const cleanKeys = keys.filter((k, i) => i === 0 || k.tono.trim());
     await onSave({
-      id: initial?.id,
+      id: initial?.id || uid(),
       title: title.trim(),
       author: author.trim(),
       keys: cleanKeys.map((k) => ({ tono: k.tono.trim(), cantante: k.cantante.trim() })),
@@ -574,9 +586,11 @@ function AddToSessionSheet({ song, sessions, onClose, onCreateNew, onAddToExisti
 
 function SearchSheet({ songs, onClose, onPick, excludeIds = [] }) {
   const [q, setQ] = useState("");
+  const excludeSet = useMemo(() => new Set(excludeIds.map(String)), [excludeIds]);
+
   const results = useMemo(() => {
     const nq = normalize(q);
-    const pool = songs.filter((s) => !excludeIds.includes(s.id));
+    const pool = songs.filter((s) => !excludeSet.has(String(s.id)));
     if (!nq) return pool;
     return pool.filter((s) => {
       const haystack = [
@@ -586,7 +600,7 @@ function SearchSheet({ songs, onClose, onPick, excludeIds = [] }) {
       ].map(normalize).join(" ");
       return haystack.includes(nq);
     });
-  }, [q, songs, excludeIds]);
+  }, [q, songs, excludeSet]);
 
   return (
     <Sheet title="Buscar canción" onClose={onClose}>
@@ -737,10 +751,10 @@ const MOVE_CANCEL_PX = 18;
 const ROW_GAP = 8;
 
 function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, onRemove }) {
-  const [order, setOrder] = useState(() => songs.map((s) => s.id));
-  useEffect(() => { setOrder(songs.map((s) => s.id)); }, [songs]);
+  const [order, setOrder] = useState(() => songs.map((s) => String(s.id)));
+  useEffect(() => { setOrder(songs.map((s) => String(s.id))); }, [songs]);
 
-  const idToSong = useMemo(() => Object.fromEntries(songs.map((s) => [s.id, s])), [songs]);
+  const idToSong = useMemo(() => Object.fromEntries(songs.map((s) => [String(s.id), s])), [songs]);
   const orderedSongs = order.map((id) => idToSong[id]).filter(Boolean);
 
   const containerRef = useRef(null);
@@ -900,13 +914,14 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
   return (
     <div className="session-song-list" ref={containerRef}>
       {orderedSongs.map((s, i) => {
-        const isDragging = dragState?.id === s.id;
-        const isLiveSwiping = liveSwipe?.id === s.id;
-        const swipeX = isLiveSwiping ? liveSwipe.x : (openSwipeId === s.id ? -REVEAL_WIDTH : 0);
+        const sid = String(s.id);
+        const isDragging = dragState?.id === sid;
+        const isLiveSwiping = liveSwipe?.id === sid;
+        const swipeX = isLiveSwiping ? liveSwipe.x : (openSwipeId === sid ? -REVEAL_WIDTH : 0);
         return (
           <div
-            key={s.id}
-            ref={(el) => { rowRefs.current[s.id] = el; }}
+            key={sid}
+            ref={(el) => { rowRefs.current[sid] = el; }}
             className="session-row-wrap"
             style={
               isDragging
@@ -915,18 +930,18 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
             }
           >
             <div className="swipe-track">
-              <button className="swipe-delete-bg" onClick={() => onRemove(s.id)} aria-label="Eliminar canción de la sesión">
+              <button className="swipe-delete-bg" onClick={() => onRemove(sid)} aria-label="Eliminar canción de la sesión">
                 <Trash2 size={18} />
               </button>
               <div
                 className="swipe-content"
-                onPointerDown={(e) => handlePointerDown(s.id, e)}
-                onPointerMove={(e) => handlePointerMove(s.id, e)}
-                onPointerUp={(e) => handlePointerUp(s.id, e)}
-                onPointerCancel={() => handlePointerCancel(s.id)}
+                onPointerDown={(e) => handlePointerDown(sid, e)}
+                onPointerMove={(e) => handlePointerMove(sid, e)}
+                onPointerUp={(e) => handlePointerUp(sid, e)}
+                onPointerCancel={() => handlePointerCancel(sid)}
                 style={{ transform: `translateX(${swipeX}px)`, transition: isLiveSwiping ? "none" : "transform 200ms ease" }}
               >
-                <SessionSongRow song={s} number={i + 1} expanded={expandedRowId === s.id} dragging={isDragging} />
+                <SessionSongRow song={s} number={i + 1} expanded={expandedRowId === sid} dragging={isDragging} />
               </div>
             </div>
           </div>
@@ -970,7 +985,7 @@ export default function App() {
       if (!res.ok) throw new Error("Error de conexión a canciones");
       const data = await res.json();
       const rawList = data.sheet1 || data.sheet1s || data.songs || data.canciones || [];
-      const list = rawList.map(parseSongFromSheety);
+      const list = rawList.map((row, idx) => parseSongFromSheety(row, idx));
       setSongs(list);
     } catch (e) {
       setError("No se pudieron cargar las canciones de Google Sheets.");
@@ -985,7 +1000,7 @@ export default function App() {
       if (!res.ok) throw new Error("Error de conexión a sesiones");
       const data = await res.json();
       const rawList = data.sheet2 || data.sheet2s || data.sessions || data.sesiones || [];
-      const list = rawList.map(parseSessionFromSheety);
+      const list = rawList.map((row, idx) => parseSessionFromSheety(row, idx));
       setSessions(list);
     } catch (e) {
       try {
@@ -1043,9 +1058,10 @@ export default function App() {
 
   const createSession = async (firstSong) => {
     const newSession = {
+      id: uid(),
       title: "",
       date: todayISO(),
-      songIds: firstSong ? [firstSong.id] : [],
+      songIds: firstSong ? [String(firstSong.id)] : [],
       createdAt: Date.now(),
     };
 
@@ -1055,18 +1071,18 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         const createdRow = data.sheet2 || data.session || newSession;
-        const createdSession = parseSessionFromSheety(createdRow);
+        const createdSession = parseSessionFromSheety(createdRow, sessions.length);
         const next = [...sessions, createdSession];
         persistSessionsLocally(next);
-        setActiveSessionId(createdSession.id);
+        setActiveSessionId(String(createdSession.id));
       } else {
         throw new Error();
       }
     } catch (e) {
-      const fallbackSession = { ...newSession, id: uid() };
+      const fallbackSession = { ...newSession };
       const next = [...sessions, fallbackSession];
       persistSessionsLocally(next);
-      setActiveSessionId(fallbackSession.id);
+      setActiveSessionId(String(fallbackSession.id));
     }
 
     setTab("sessions");
@@ -1076,7 +1092,7 @@ export default function App() {
   const updateActiveSession = async (patch) => {
     if (!activeSession) return;
     const updated = { ...activeSession, ...patch };
-    const nextSessions = sessions.map((s) => (s.id === activeSession.id ? updated : s));
+    const nextSessions = sessions.map((s) => (String(s.id) === String(activeSession.id) ? updated : s));
     persistSessionsLocally(nextSessions);
 
     try {
@@ -1085,10 +1101,10 @@ export default function App() {
   };
 
   const addSongToSession = async (sessionId, song) => {
-    const targetSession = sessions.find((s) => s.id === sessionId);
+    const targetSession = sessions.find((s) => String(s.id) === String(sessionId));
     if (!targetSession) return;
-    const updated = { ...targetSession, songIds: [...targetSession.songIds, song.id] };
-    const nextSessions = sessions.map((s) => (s.id === sessionId ? updated : s));
+    const updated = { ...targetSession, songIds: [...targetSession.songIds, String(song.id)] };
+    const nextSessions = sessions.map((s) => (String(s.id) === String(sessionId) ? updated : s));
     persistSessionsLocally(nextSessions);
     setAddSheetSong(null);
 
@@ -1098,9 +1114,9 @@ export default function App() {
   };
 
   const deleteSession = async (id) => {
-    const nextSessions = sessions.filter((s) => s.id !== id);
+    const nextSessions = sessions.filter((s) => String(s.id) !== String(id));
     persistSessionsLocally(nextSessions);
-    if (activeSessionId === id) setActiveSessionId(null);
+    if (String(activeSessionId) === String(id)) setActiveSessionId(null);
 
     try {
       await postToAppsScript(SHEETY_SESSIONS_URL, { action: "delete", id });
@@ -1113,8 +1129,8 @@ export default function App() {
       const nq = query.trim();
       if (!nq) return songs;
       const ids = localThemeSearch(nq, songs);
-      const order = new Map(ids.map((id, i) => [id, i]));
-      return songs.filter((s) => order.has(s.id)).sort((a, b) => order.get(a.id) - order.get(b.id));
+      const order = new Map(ids.map((id, i) => [String(id), i]));
+      return songs.filter((s) => order.has(String(s.id))).sort((a, b) => order.get(String(a.id)) - order.get(String(b.id)));
     }
     const nq = normalize(query);
     if (!nq) return songs;
@@ -1144,20 +1160,22 @@ export default function App() {
     return arr;
   }, [filteredSongs, sortBy, searchType, query]);
 
-  const activeSession = sessions.find((s) => s.id === activeSessionId) || null;
+  const activeSession = sessions.find((s) => String(s.id) === String(activeSessionId)) || null;
   const activeSessionSongs = useMemo(() => {
     if (!activeSession) return [];
-    return activeSession.songIds.map((id) => songs.find((s) => s.id === id)).filter(Boolean);
+    return activeSession.songIds
+      .map((id) => songs.find((s) => String(s.id) === String(id)))
+      .filter(Boolean);
   }, [activeSession, songs]);
 
-  const reorderSession = (newIds) => updateActiveSession({ songIds: newIds });
+  const reorderSession = (newIds) => updateActiveSession({ songIds: newIds.map(String) });
 
   const removeSongFromSession = (id) => {
-    updateActiveSession({ songIds: activeSession.songIds.filter((sid) => sid !== id) });
+    updateActiveSession({ songIds: activeSession.songIds.filter((sid) => String(sid) !== String(id)) });
   };
 
   const addSongToActiveSession = (song) => {
-    updateActiveSession({ songIds: [...activeSession.songIds, song.id] });
+    updateActiveSession({ songIds: [...activeSession.songIds, String(song.id)] });
     setSessionSearchOpen(false);
     setSessionAddMenuOpen(false);
     setSuggest(null);
@@ -1170,7 +1188,8 @@ export default function App() {
     const prev = activeSessionSongs[activeSessionSongs.length - 1];
     if (!prev) return;
 
-    const candidates = songs.filter((s) => !activeSession.songIds.includes(s.id));
+    const currentSet = new Set(activeSession.songIds.map(String));
+    const candidates = songs.filter((s) => !currentSet.has(String(s.id)));
     if (candidates.length === 0) {
       setSuggest({ result: null, error: "No hay más canciones en tu repertorio para sugerir." });
       return;
@@ -1358,11 +1377,11 @@ export default function App() {
                   .map((s) => (
                     <SwipeToDeleteRow
                       key={s.id}
-                      id={s.id}
+                      id={String(s.id)}
                       openId={openSwipeSessionId}
                       setOpenId={setOpenSwipeSessionId}
                       onDelete={() => deleteSession(s.id)}
-                      onTap={() => setActiveSessionId(s.id)}
+                      onTap={() => setActiveSessionId(String(s.id))}
                     >
                       <div className="session-card">
                         <div className="session-card-icon"><ListMusic size={18} /></div>
