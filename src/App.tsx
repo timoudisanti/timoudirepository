@@ -83,7 +83,6 @@ function parseSongFromSheety(row, idx) {
   const parsedSections = safeParseJSON(row.sections);
   const parsedKeys = safeParseJSON(row.keys);
   
-  // Garantizar un ID único incluso si Google Sheets no tiene la columna id
   const songId = (row.id !== undefined && row.id !== "" && row.id !== null)
     ? String(row.id)
     : `song-${idx + 1}`;
@@ -238,28 +237,42 @@ ${list}
 Devolvé ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto ni Markdown adicional):
 {"songId": "ID_ELEGIDO", "reason": "una frase breve en español explicando la conexión temática"}`;
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json"
-        }
-      })
-    }
-  );
+  const modelsToTry = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-2.5-flash"];
+  let lastError = null;
 
-  if (!response.ok) {
-    const errData = await response.json().catch(() => ({}));
-    throw new Error(errData.error?.message || `HTTP ${response.status}`);
+  for (const model of modelsToTry) {
+    for (const apiVersion of ["v1", "v1beta"]) {
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                responseMimeType: "application/json"
+              }
+            })
+          }
+        );
+
+        if (response.ok) {
+          const data = await response.json();
+          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          const parsed = safeParseJSON(text);
+          if (parsed?.songId) return parsed;
+        } else {
+          const errData = await response.json().catch(() => ({}));
+          lastError = new Error(errData.error?.message || `HTTP ${response.status}`);
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
   }
 
-  const data = await response.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  return safeParseJSON(text);
+  throw lastError || new Error("No se pudo conectar con los modelos disponibles de Gemini.");
 }
 
 /* ---------------- Small UI atoms ---------------- */
@@ -1195,9 +1208,9 @@ export default function App() {
       return;
     }
 
-    // Diagnóstico 1: Verificar si Vercel inyectó la API Key
     if (!GEMINI_API_KEY) {
-      setSuggest({ result: null, error: "Error: La variable VITE_GEMINI_API_KEY no está definida en Vercel." });
+      const res = localSuggestNext(prev, candidates);
+      setSuggest({ result: res, error: "" });
       return;
     }
 
@@ -1213,7 +1226,6 @@ export default function App() {
         throw new Error(`Gemini devolvió el ID "${res?.songId}" pero no coincide con ninguna canción.`);
       }
     } catch (e) {
-      // Diagnóstico 2: Mostrar error exacto de respuesta de Google
       setSuggest({ result: null, error: `Error Gemini: ${e.message}` });
     }
   };
