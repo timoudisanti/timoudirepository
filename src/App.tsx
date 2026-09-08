@@ -218,7 +218,7 @@ function localThemeSearch(query, songs) {
   return scored.map((x) => x.id);
 }
 
-/* ---------------- Gemini AI Helper ---------------- */
+/* ---------------- Gemini AI Helper Directo ---------------- */
 
 async function aiSuggestNextGemini(prevSong, candidates, apiKey) {
   const pool = candidates.slice(0, 50);
@@ -237,42 +237,33 @@ ${list}
 Devolvé ÚNICAMENTE un JSON válido con esta estructura exacta (sin texto ni Markdown adicional):
 {"songId": "ID_ELEGIDO", "reason": "una frase breve en español explicando la conexión temática"}`;
 
-  const modelsToTry = ["gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"];
-  let lastError = null;
-
-  for (const model of modelsToTry) {
-    for (const apiVersion of ["v1beta", "v1"]) {
-      try {
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/${apiVersion}/models/${model}:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: {
-                responseMimeType: "application/json"
-              }
-            })
-          }
-        );
-
-        if (response.ok) {
-          const data = await response.json();
-          const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          const parsed = safeParseJSON(text);
-          if (parsed?.songId) return parsed;
-        } else {
-          const errData = await response.json().catch(() => ({}));
-          lastError = new Error(errData.error?.message || `HTTP ${response.status}`);
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json"
         }
-      } catch (err) {
-        lastError = err;
-      }
+      })
     }
+  );
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error?.message || `Error ${response.status}: ${response.statusText}`);
   }
 
-  throw lastError || new Error("No se pudo conectar con los modelos disponibles de Gemini.");
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Gemini no devolvió ningún texto.");
+
+  const parsed = safeParseJSON(text);
+  if (!parsed) throw new Error("No se pudo interpretar el JSON devuelto por Gemini.");
+
+  return parsed;
 }
 
 /* ---------------- Small UI atoms ---------------- */
@@ -1209,8 +1200,7 @@ export default function App() {
     }
 
     if (!GEMINI_API_KEY) {
-      const res = localSuggestNext(prev, candidates);
-      setSuggest({ result: res, error: "" });
+      setSuggest({ result: null, error: "Error: La variable VITE_GEMINI_API_KEY no está definida en Vercel." });
       return;
     }
 
@@ -1223,7 +1213,7 @@ export default function App() {
       if (song) {
         setSuggest({ result: { song, reason: res.reason || "Recomendada por temática." }, error: "" });
       } else {
-        throw new Error(`Gemini devolvió el ID "${res?.songId}" pero no coincide con ninguna canción.`);
+        throw new Error(`Gemini eligió el ID "${res?.songId}" pero no coincide con ninguna canción de la lista.`);
       }
     } catch (e) {
       setSuggest({ result: null, error: `Error Gemini: ${e.message}` });
