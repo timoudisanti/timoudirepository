@@ -1195,9 +1195,9 @@ export default function App() {
       return;
     }
 
+    // Diagnóstico 1: Verificar si Vercel inyectó la API Key
     if (!GEMINI_API_KEY) {
-      const res = localSuggestNext(prev, candidates);
-      setSuggest({ result: res, error: "" });
+      setSuggest({ result: null, error: "Error: La variable VITE_GEMINI_API_KEY no está definida en Vercel." });
       return;
     }
 
@@ -1210,11 +1210,11 @@ export default function App() {
       if (song) {
         setSuggest({ result: { song, reason: res.reason || "Recomendada por temática." }, error: "" });
       } else {
-        throw new Error("Local fallback");
+        throw new Error(`Gemini devolvió el ID "${res?.songId}" pero no coincide con ninguna canción.`);
       }
     } catch (e) {
-      const res = localSuggestNext(prev, candidates);
-      setSuggest({ result: res, error: "" });
+      // Diagnóstico 2: Mostrar error exacto de respuesta de Google
+      setSuggest({ result: null, error: `Error Gemini: ${e.message}` });
     }
   };
 
