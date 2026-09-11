@@ -727,6 +727,7 @@ function SessionSongRow({ song, number, expanded, dragging, onChangeKey }) {
                 <button
                   key={i}
                   type="button"
+                  onPointerDown={(e) => e.stopPropagation()} /* BLOQUEA EL CIERRE AL TOCAR EL TONO */
                   onClick={(e) => {
                     e.stopPropagation();
                     onChangeKey?.(song.id, k.tono.trim());
