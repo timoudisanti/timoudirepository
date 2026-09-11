@@ -1942,14 +1942,25 @@ html, body {
 .bottom-nav button.nav-active { color: var(--latte); font-weight: 700; }
 
 .sheet-overlay { position: fixed; inset: 0; background: rgba(54, 45, 41, 0.45); display: flex; align-items: flex-end; justify-content: center; z-index: 50; backdrop-filter: blur(2px); }
-.sheet { background: var(--froth); width: 100%; max-width: 480px; max-height: 88vh; border-radius: 20px 20px 0 0; display: flex; flex-direction: column; overflow: hidden; border-top: 1px solid var(--line); }
+.sheet { 
+  background: var(--froth); 
+  width: 100%; 
+  max-width: 480px; 
+  min-height: 68vh; 
+  max-height: 88vh; 
+  border-radius: 20px 20px 0 0; 
+  display: flex; 
+  flex-direction: column; 
+  overflow: hidden; 
+  border-top: 1px solid var(--line); 
+}
 .sheet-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); background: var(--chai); }
 .sheet-header h2 { font-size: 18px; margin: 0; font-weight: 700; color: var(--text); word-break: break-word; }
 .sheet-body { padding: 16px 18px; overflow-y: auto; flex: 1; background: var(--froth); }
 
 /* Pie de formulario ajustado con safe area inset para iPhone */
 .sheet-footer { 
-  padding: 14px 18px calc(18px + env(safe-area-inset-bottom)); 
+  padding: 14px 18px calc(24px + env(safe-area-inset-bottom)); 
   border-top: 1px solid var(--line); 
   background: var(--chai); 
 }
