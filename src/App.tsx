@@ -364,7 +364,66 @@ function KeyPickerSheet({ song, onClose, onSelectKey }) {
   );
 }
 
-/* ---------------- Song Detail Viewer Sheet ---------------- */
+/* ---------------- Session Song Fullscreen Detail Sheet ---------------- */
+
+function SessionSongDetailSheet({ song, onClose, onChangeKey }) {
+  const displayKey = song.selectedKey || song.keys?.[0]?.tono;
+  const sections = displaySections(song);
+
+  return (
+    <div className="fullscreen-overlay">
+      <div className="fullscreen-header">
+        <div>
+          <h2 style={{ fontSize: "19px", margin: 0, fontWeight: 700, color: "var(--text)" }}>
+            {song.title} {displayKey && <span className="session-tono">{displayKey}</span>}
+          </h2>
+          {song.author && <div style={{ fontSize: "13px", color: "var(--text-faint)", marginTop: "2px" }}>{song.author}</div>}
+        </div>
+        <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
+          <X size={22} />
+        </button>
+      </div>
+      <div className="fullscreen-body">
+        <div className="session-row-meta" style={{ marginBottom: "16px" }}>
+          <Pill tempo={song.tempo}>{TEMPO_LABEL[song.tempo]}</Pill>
+          {(song.keys || []).map((k, i) => (
+            k.tono && (
+              <button
+                key={i}
+                type="button"
+                onClick={() => onChangeKey(song.id, k.tono.trim())}
+                className={`pill pill-key-btn ${k.tono.trim() === displayKey ? "pill-selected-key" : ""}`}
+                title="Tocar para seleccionar este tono"
+              >
+                {k.tono.trim()}{k.cantante ? ` · ${k.cantante}` : ""}
+              </button>
+            )
+          ))}
+          {song.youtube && (
+            <a className="yt-link" href={song.youtube} target="_blank" rel="noreferrer">
+              <LinkIcon size={13} /> YouTube <ExternalLink size={11} />
+            </a>
+          )}
+        </div>
+
+        <div className="session-row-lyrics" style={{ maxHeight: "none" }}>
+          {sections.length === 0 ? (
+            <p className="lyrics-empty">Sin letra cargada.</p>
+          ) : (
+            sections.map((sec, i) => (
+              <div className="lyrics-section" key={sec.id || i}>
+                <div className="lyrics-section-label">{sec.label}</div>
+                <pre className="lyrics-section-content">{sec.content || "(vacío)"}</pre>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------------- Song Detail Viewer Sheet (General) ---------------- */
 
 function SongDetailSheet({ song, onClose, onEdit, onAddClick }) {
   const primary = song.keys?.[0];
@@ -697,11 +756,10 @@ function SearchSheet({ songs, onClose, onPick, excludeIds = [] }) {
   );
 }
 
-/* ---------------- Session song row ---------------- */
+/* ---------------- Session song row (Sin colapso interno) ---------------- */
 
-function SessionSongRow({ song, number, expanded, dragging, onChangeKey }) {
+function SessionSongRow({ song, number, dragging }) {
   const displayKey = song.selectedKey || song.keys?.[0]?.tono;
-  const sections = displaySections(song);
 
   return (
     <div className={`session-row${dragging ? " session-row-dragging" : ""}`}>
@@ -715,50 +773,9 @@ function SessionSongRow({ song, number, expanded, dragging, onChangeKey }) {
             </div>
             <div className="session-author-line">{song.author || "Autor desconocido"}</div>
           </div>
-          {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+          <ChevronRight size={18} className="option-chevron" />
         </div>
       </div>
-      {expanded && (
-        <div className="session-row-body">
-          <div className="session-row-meta">
-            <Pill tempo={song.tempo}>{TEMPO_LABEL[song.tempo]}</Pill>
-            {(song.keys || []).map((k, i) => (
-              k.tono && (
-                <button
-                  key={i}
-                  type="button"
-                  onPointerDown={(e) => e.stopPropagation()} /* BLOQUEA EL CIERRE AL TOCAR EL TONO */
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onChangeKey?.(song.id, k.tono.trim());
-                  }}
-                  className={`pill pill-key-btn ${k.tono === displayKey ? "pill-selected-key" : ""}`}
-                  title="Tocar para seleccionar este tono"
-                >
-                  {k.tono}{k.cantante ? ` · ${k.cantante}` : ""}
-                </button>
-              )
-            ))}
-            {song.youtube && (
-              <a className="yt-link" href={song.youtube} target="_blank" rel="noreferrer" onPointerDown={(e) => e.stopPropagation()}>
-                <LinkIcon size={13} /> YouTube <ExternalLink size={11} />
-              </a>
-            )}
-          </div>
-          <div className="session-row-lyrics">
-            {sections.length === 0 ? (
-              <p className="lyrics-empty">Sin letra cargada.</p>
-            ) : (
-              sections.map((sec, i) => (
-                <div className="lyrics-section" key={sec.id || i}>
-                  <div className="lyrics-section-label">{sec.label}</div>
-                  <pre className="lyrics-section-content">{sec.content || "(vacío)"}</pre>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -835,7 +852,7 @@ const LONG_PRESS_MS = 300;
 const MOVE_CANCEL_PX = 8;
 const ROW_GAP = 8;
 
-function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, onRemove, onChangeKey }) {
+function SessionSongList({ songs, onReorderCommit, onSongTap, onRemove }) {
   const [order, setOrder] = useState(() => songs.map((s) => String(s.id)));
   useEffect(() => { setOrder(songs.map((s) => String(s.id))); }, [songs]);
 
@@ -959,7 +976,6 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
   const startDrag = (id, targetEl, pointerId, clientY) => {
     const node = rowRefs.current[id];
     if (!node) return;
-    onToggleRow(null);
     setOpenSwipeId(null);
     if (targetEl && targetEl.setPointerCapture) {
       try { targetEl.setPointerCapture(pointerId); } catch (err) {}
@@ -1078,7 +1094,7 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
 
     if (g.mode === "pending") {
       if (openSwipeId === id) setOpenSwipeId(null);
-      else onToggleRow(id);
+      else onSongTap?.(id);
     }
   };
 
@@ -1135,9 +1151,7 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
                 <SessionSongRow
                   song={s}
                   number={i + 1}
-                  expanded={expandedRowId === sid}
                   dragging={isDragging}
-                  onChangeKey={onChangeKey}
                 />
               </div>
             </div>
@@ -1172,12 +1186,12 @@ export default function App() {
   const [openSwipeSongId, setOpenSwipeSongId] = useState(null);
   const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [sessionAddMenuOpen, setSessionAddMenuOpen] = useState(false);
-  const [expandedRowId, setExpandedRowId] = useState(null);
   const [suggest, setSuggest] = useState(null);
   const [editingTitle, setEditingTitle] = useState(false);
 
-  /* ---- Modal de selección de tono ---- */
+  /* ---- Modal de selección de tono y vista de detalle de canción en sesión ---- */
   const [keyPickerData, setKeyPickerData] = useState(null);
+  const [sessionViewingSongId, setSessionViewingSongId] = useState(null);
 
   /* ---- Apps Script / Sheety API loads ---- */
   const loadSongs = useCallback(async () => {
@@ -1444,6 +1458,11 @@ export default function App() {
       .filter(Boolean);
   }, [activeSession, songs]);
 
+  const currentViewingSessionSong = useMemo(() => {
+    if (!sessionViewingSongId) return null;
+    return activeSessionSongs.find((s) => String(s.id) === String(sessionViewingSongId)) || null;
+  }, [activeSessionSongs, sessionViewingSongId]);
+
   const reorderSession = (newOrderInstanceIds) => {
     if (!activeSession) return;
     const entryMap = new Map(
@@ -1600,7 +1619,7 @@ export default function App() {
         ) : activeSession ? (
           <div className="session-editor">
             <div className="session-editor-header">
-              <button className="icon-btn" onClick={() => { setActiveSessionId(null); setSuggest(null); setExpandedRowId(null); }}>
+              <button className="icon-btn" onClick={() => { setActiveSessionId(null); setSuggest(null); setSessionViewingSongId(null); }}>
                 <ArrowLeft size={20} />
               </button>
               <div className="session-editor-titlebox">
@@ -1638,10 +1657,8 @@ export default function App() {
               <SessionSongList
                 songs={activeSessionSongs}
                 onReorderCommit={reorderSession}
-                expandedRowId={expandedRowId}
-                onToggleRow={(id) => setExpandedRowId((cur) => (id === null ? null : cur === id ? null : id))}
+                onSongTap={(id) => setSessionViewingSongId(id)}
                 onRemove={removeSongFromSession}
-                onChangeKey={changeSongKeyInActiveSession}
               />
             )}
             <p className="drag-hint">Mantené apretado y arrastrá para reordenar · deslizá a la izquierda para eliminar</p>
@@ -1729,6 +1746,14 @@ export default function App() {
             setViewingSong(null);
             setAddSheetSong(song);
           }}
+        />
+      )}
+
+      {currentViewingSessionSong && (
+        <SessionSongDetailSheet
+          song={currentViewingSessionSong}
+          onClose={() => setSessionViewingSongId(null)}
+          onChangeKey={changeSongKeyInActiveSession}
         />
       )}
 
@@ -2005,6 +2030,33 @@ html, body {
   background: var(--chai); 
 }
 .sheet-divider { font-size: 12px; color: var(--text-faint); padding: 12px 2px 4px; font-weight: 600; }
+
+/* Vista Pantalla Completa para canciones de la Sesión */
+.fullscreen-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--froth);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fullscreen-header {
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  background: var(--chai);
+}
+
+.fullscreen-body {
+  flex: 1;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  background: var(--froth);
+}
 
 .modal-overlay { 
   position: fixed; 
