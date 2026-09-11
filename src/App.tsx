@@ -77,7 +77,20 @@ function lyricsAsPlainText(song) {
   return displaySections(song).map((s) => `${s.label}\n${s.content}`).join("\n\n");
 }
 
-/* ---------------- API helpers ---------------- */
+/* ---------------- API helpers con Auto-Reintento ---------------- */
+
+async function fetchWithRetry(url, retries = 3, backoff = 1000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP Error ${response.status}`);
+      return await response.json();
+    } catch (err) {
+      if (i === retries - 1) throw err;
+      await new Promise(resolve => setTimeout(resolve, backoff * (i + 1))); // Espera escalonada
+    }
+  }
+}
 
 function parseSongFromSheety(row, idx) {
   const parsedSections = safeParseJSON(row.sections);
@@ -187,33 +200,6 @@ function wordFrequency(words) {
   const map = new Map();
   for (const w of words) map.set(w, (map.get(w) || 0) + 1);
   return map;
-}
-
-function localSuggestNext(prevSong, candidates) {
-  if (candidates.length === 0) return null;
-  const prevWords = significantWords(lyricsAsPlainText(prevSong) || prevSong.title || "");
-  if (prevWords.length === 0) {
-    const song = candidates[Math.floor(Math.random() * candidates.length)];
-    return { song, shared: [], reason: "La canción anterior no tiene letra cargada, así que elegimos esta al azar de tu repertorio." };
-  }
-  const prevSet = new Set(prevWords);
-  let best = null;
-  for (const c of candidates) {
-    const cWords = significantWords(lyricsAsPlainText(c) || c.title || "");
-    const shared = new Set();
-    let score = 0;
-    for (const w of cWords) {
-      if (prevSet.has(w)) { score++; shared.add(w); }
-    }
-    if (!best || score > best.score) best = { song: c, score, shared: Array.from(shared) };
-  }
-  if (!best || best.score === 0) {
-    const song = candidates[Math.floor(Math.random() * candidates.length)];
-    return { song, shared: [], reason: "No encontramos palabras en común claras; te sugerimos esta al azar de tu repertorio." };
-  }
-  const top = best.shared.slice(0, 4);
-  const reason = `Comparte palabras de la letra como ${top.map((w) => `"${w}"`).join(", ")} con la canción anterior.`;
-  return { song: best.song, shared: top, reason };
 }
 
 function localThemeSearch(query, songs) {
@@ -521,9 +507,11 @@ function SongForm({ initial, onSave, onDelete, onClose }) {
   const handleSave = async () => {
     if (!title.trim()) { setErr("Poné al menos un título."); return; }
     if (!keys[0]?.tono?.trim()) { setErr("Poné el tono principal."); return; }
+    
+    // UI Optimista
     setSaving(true);
     const cleanKeys = keys.filter((k, i) => i === 0 || k.tono.trim());
-    await onSave({
+    const finalSong = {
       id: initial?.id || uid(),
       title: title.trim(),
       author: author.trim(),
@@ -532,7 +520,9 @@ function SongForm({ initial, onSave, onDelete, onClose }) {
       tempo,
       youtube: youtube.trim(),
       createdAt: initial?.createdAt || Date.now(),
-    });
+    };
+
+    await onSave(finalSong);
     setSaving(false);
   };
 
@@ -1204,42 +1194,54 @@ export default function App() {
   const [keyPickerData, setKeyPickerData] = useState(null);
   const [sessionViewingSongId, setSessionViewingSongId] = useState(null);
 
-  /* ---- Apps Script / Sheety API loads ---- */
-  const loadSongs = useCallback(async () => {
+  /* ---- Sincronización y Caché unificados ---- */
+  const syncData = useCallback(async (showLoading = false) => {
+    if (showLoading) setLoaded(false);
+    setError("");
+    
     try {
-      const res = await fetch(`${SHEETY_URL}&_t=${Date.now()}`);
-      if (!res.ok) throw new Error("Error de conexión a canciones");
-      const data = await res.json();
-      const rawList = data.sheet1 || data.sheet1s || data.songs || data.canciones || [];
-      const list = rawList.map((row, idx) => parseSongFromSheety(row, idx));
-      setSongs(list);
+      // 1. Fetch canciones (con reintentos)
+      const dataSongs = await fetchWithRetry(`${SHEETY_URL}&_t=${Date.now()}`);
+      const rawSongs = dataSongs.sheet1 || dataSongs.sheet1s || dataSongs.songs || dataSongs.canciones || [];
+      const parsedSongs = rawSongs.map((row, idx) => parseSongFromSheety(row, idx));
+      setSongs(parsedSongs);
+      localStorage.setItem("worshinotes:songs", JSON.stringify(parsedSongs));
+
+      // 2. Fetch sesiones (con reintentos, secuencial para no ahogar Apps Script)
+      const dataSessions = await fetchWithRetry(`${SHEETY_SESSIONS_URL}&_t=${Date.now()}`);
+      const rawSessions = dataSessions.sheet2 || dataSessions.sheet2s || dataSessions.sessions || dataSessions.sesiones || [];
+      const parsedSessions = rawSessions.map((row, idx) => parseSessionFromSheety(row, idx));
+      setSessions(parsedSessions);
+      localStorage.setItem("worshinotes:sessions", JSON.stringify(parsedSessions));
+      
     } catch (e) {
-      setError("No se pudieron cargar las canciones de Google Sheets.");
+      console.error(e);
+      // No frenamos la app, mostramos un error de conexión genérico
+      if (songs.length === 0) {
+        setError("Problema de conexión al cargar la app. Comprobá tu internet.");
+      }
     } finally {
       setLoaded(true);
     }
-  }, []);
-
-  const loadSessions = useCallback(async () => {
-    try {
-      const res = await fetch(`${SHEETY_SESSIONS_URL}&_t=${Date.now()}`);
-      if (!res.ok) throw new Error("Error de conexión a sesiones");
-      const data = await res.json();
-      const rawList = data.sheet2 || data.sheet2s || data.sessions || data.sesiones || [];
-      const list = rawList.map((row, idx) => parseSessionFromSheety(row, idx));
-      setSessions(list);
-    } catch (e) {
-      try {
-        const stored = localStorage.getItem("worshinotes:sessions");
-        if (stored) setSessions(JSON.parse(stored));
-      } catch (err) {}
-    }
-  }, []);
+  }, [songs.length]);
 
   useEffect(() => {
-    loadSongs();
-    loadSessions();
-  }, [loadSongs, loadSessions]);
+    // 1. Carga RÁPIDA (Instantánea) desde Caché
+    try {
+      const cachedSongs = localStorage.getItem("worshinotes:songs");
+      if (cachedSongs) {
+        setSongs(JSON.parse(cachedSongs));
+        setLoaded(true); // Desactiva spinner al instante si hay datos guardados
+      }
+      const cachedSessions = localStorage.getItem("worshinotes:sessions");
+      if (cachedSessions) {
+        setSessions(JSON.parse(cachedSessions));
+      }
+    } catch (err) {}
+
+    // 2. Pedir datos nuevos por detrás silenciosamente
+    syncData(false);
+  }, [syncData]);
 
   /* ---- Apps Script CRUD Helper ---- */
   const postToAppsScript = async (targetUrl, payload) => {
@@ -1257,28 +1259,39 @@ export default function App() {
   };
 
   const saveSong = async (song) => {
+    // Actualización Optmista de UI para velocidad máxima
+    setFormOpen(false);
+    setEditingSong(null);
+    setSongs((prev) => {
+      const exists = prev.some((s) => s.id === song.id);
+      const next = exists ? prev.map((s) => (s.id === song.id ? song : s)) : [...prev, song];
+      localStorage.setItem("worshinotes:songs", JSON.stringify(next));
+      return next;
+    });
+
     try {
       const body = formatSongForSheety(song);
       const res = await postToAppsScript(SHEETY_URL, body);
-
       if (!res.ok) throw new Error("Error al guardar canción");
-      await loadSongs();
-      setFormOpen(false);
-      setEditingSong(null);
+      syncData(false); // Sincroniza silencioso por si acaso
     } catch (e) {
-      setError("No se pudo guardar la canción en Google Sheets.");
+      setError("Error al sincronizar con Google Sheets. Se guardó localmente en tu celular.");
     }
   };
 
   const deleteSong = async (id) => {
+    // Actualización Optmista de UI
+    setSongs((prev) => {
+      const next = prev.filter((s) => s.id !== id);
+      localStorage.setItem("worshinotes:songs", JSON.stringify(next));
+      return next;
+    });
+
     try {
-      const res = await postToAppsScript(SHEETY_URL, { action: "delete", id });
-      if (!res.ok) throw new Error("Error al eliminar canción");
-      await loadSongs();
-      setFormOpen(false);
-      setEditingSong(null);
+      await postToAppsScript(SHEETY_URL, { action: "delete", id });
+      syncData(false);
     } catch (e) {
-      setError("No se pudo eliminar la canción.");
+      setError("Error al sincronizar con Google Sheets. Se eliminó localmente.");
     }
   };
 
@@ -1546,7 +1559,7 @@ export default function App() {
 
       <header className="app-header">
         <h1 className="wordmark">WORSHINOTES</h1>
-        <button className="icon-btn refresh-icon" onClick={() => { loadSongs(); loadSessions(); }} title="Actualizar datos">
+        <button className="icon-btn refresh-icon" onClick={() => syncData(true)} title="Actualizar datos">
           <RefreshCw size={16} />
         </button>
       </header>
@@ -1559,7 +1572,7 @@ export default function App() {
 
       <main className="app-main">
         {!loaded ? (
-          <EmptyState icon={<Loader2 className="spin" size={28} />} title="Cargando tu repertorio desde Google Sheets..." />
+          <EmptyState icon={<Loader2 className="spin" size={28} />} title="Cargando tu repertorio..." />
         ) : tab === "songs" ? (
           <div className="songs-view">
             <div className="search-bar">
@@ -2064,7 +2077,7 @@ html, body {
 
 /* Capa transparente de bloqueo cuando hay un swipe abierto */
 .swipe-backdrop {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 48;
   background: transparent;
