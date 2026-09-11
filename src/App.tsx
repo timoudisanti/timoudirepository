@@ -1366,7 +1366,7 @@ export default function App() {
 
       <header className="app-header">
         <div className="staff-lines" aria-hidden="true"><span /><span /><span /></div>
-        <h1 className="wordmark">Worshinotes</h1>
+        <h1 className="wordmark">WORSHINOTES</h1>
         <button className="icon-btn refresh-icon" onClick={() => { loadSongs(); loadSessions(); }} title="Actualizar datos">
           <RefreshCw size={16} />
         </button>
@@ -1686,7 +1686,7 @@ html, body {
 .staff-lines span:nth-child(1) { width: 22px; }
 .staff-lines span:nth-child(2) { width: 14px; }
 .staff-lines span:nth-child(3) { width: 18px; }
-.wordmark { font-weight: 700; font-size: 22px; letter-spacing: 0.01em; margin: 0; color: var(--latte); flex: 1; margin-left: 12px; }
+.wordmark { font-weight: 700; font-size: 22px; letter-spacing: 0.01em; margin: 0; color: var(--text); flex: 1; margin-left: 12px; }
 .refresh-icon { color: var(--text-dim); }
 
 .banner-error { margin: 10px 16px 0; background: var(--danger-dim); color: var(--danger); padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--danger); }
