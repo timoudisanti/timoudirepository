@@ -1782,7 +1782,23 @@ html, body {
 .empty-title { font-size: 16px; font-weight: 600; color: var(--text-dim); margin: 0; }
 .empty-hint { font-size: 13px; margin: 0; }
 
-.fab { position: fixed; bottom: 92px; right: calc(50% - 240px + 20px); width: 54px; height: 52px; border-radius: 50%; background: var(--cinna); color: var(--espresso); border: 1px solid #C2A196; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(207, 179, 169, 0.45); cursor: pointer; }
+.fab { 
+  position: fixed; 
+  bottom: calc(88px + env(safe-area-inset-bottom)); 
+  right: calc(50% - 240px + 20px); 
+  width: 54px; 
+  height: 54px; 
+  border-radius: 50%; 
+  background: var(--cinna); 
+  color: var(--espresso); 
+  border: 1px solid #C2A196; 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  box-shadow: 0 6px 18px rgba(207, 179, 169, 0.45); 
+  cursor: pointer; 
+  z-index: 40; 
+}
 @media (max-width: 480px) { .fab { right: 20px; } }
 
 .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: var(--froth); border-top: 1px solid var(--line); display: flex; padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); }
