@@ -305,10 +305,10 @@ function Pill({ children, tempo }) {
   return <span className={`pill ${tempoClass}`}>{children}</span>;
 }
 
-function Sheet({ title, onClose, children, footer }) {
+function Sheet({ title, onClose, children, footer, centered = false }) {
   return (
-    <div className="sheet-overlay" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
+    <div className={centered ? "modal-overlay" : "sheet-overlay"} onClick={onClose}>
+      <div className={centered ? "modal-card" : "sheet"} onClick={(e) => e.stopPropagation()}>
         <div className="sheet-header">
           <h2>{title}</h2>
           <button className="icon-btn" onClick={onClose} aria-label="Cerrar">
@@ -332,13 +332,13 @@ function EmptyState({ icon, title, hint }) {
   );
 }
 
-/* ---------------- Key Picker Sheet ---------------- */
+/* ---------------- Key Picker Sheet (Centrado) ---------------- */
 
 function KeyPickerSheet({ song, onClose, onSelectKey }) {
   const validKeys = (song.keys || []).filter((k) => k.tono && k.tono.trim() !== "");
 
   return (
-    <Sheet title={`Elegir tono para "${song.title}"`} onClose={onClose}>
+    <Sheet title={`Elegir tono para "${song.title}"`} onClose={onClose} centered>
       <p className="key-picker-hint">Esta canción tiene tonos alternativos. Seleccioná en qué tono la querés agregar a esta sesión:</p>
       <div className="key-picker-list">
         {validKeys.map((k, idx) => (
@@ -1811,7 +1811,7 @@ html, body {
   display: flex;
   flex-direction: column;
   position: relative;
-  padding-bottom: 76px;
+  padding-bottom: calc(84px + env(safe-area-inset-bottom));
 }
 
 .spin { animation: spin 1s linear infinite; }
@@ -1920,7 +1920,7 @@ html, body {
 
 .fab { 
   position: fixed; 
-  bottom: calc(88px + env(safe-area-inset-bottom)); 
+  bottom: calc(90px + env(safe-area-inset-bottom)); 
   right: calc(50% - 240px + 20px); 
   width: 54px; 
   height: 54px; 
@@ -1937,7 +1937,7 @@ html, body {
 }
 @media (max-width: 480px) { .fab { right: 20px; } }
 
-.bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: var(--froth); border-top: 1px solid var(--line); display: flex; padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); z-index: 45; }
+.bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: var(--froth); border-top: 1px solid var(--line); display: flex; padding: 8px 0 calc(12px + env(safe-area-inset-bottom)); z-index: 45; }
 .bottom-nav button { flex: 1; background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text-faint); font-size: 11px; font-family: inherit; padding: 6px 0; cursor: pointer; }
 .bottom-nav button.nav-active { color: var(--latte); font-weight: 700; }
 
@@ -1946,8 +1946,39 @@ html, body {
 .sheet-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); background: var(--chai); }
 .sheet-header h2 { font-size: 18px; margin: 0; font-weight: 700; color: var(--text); word-break: break-word; }
 .sheet-body { padding: 16px 18px; overflow-y: auto; flex: 1; background: var(--froth); }
-.sheet-footer { padding: 12px 18px; border-top: 1px solid var(--line); background: var(--chai); }
+
+/* Pie de formulario ajustado con safe area inset para iPhone */
+.sheet-footer { 
+  padding: 14px 18px calc(18px + env(safe-area-inset-bottom)); 
+  border-top: 1px solid var(--line); 
+  background: var(--chai); 
+}
 .sheet-divider { font-size: 12px; color: var(--text-faint); padding: 12px 2px 4px; font-weight: 600; }
+
+/* Estilos para Modales Centrados */
+.modal-overlay { 
+  position: fixed; 
+  inset: 0; 
+  background: rgba(54, 45, 41, 0.55); 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  padding: 20px; 
+  z-index: 60; 
+  backdrop-filter: blur(3px); 
+}
+.modal-card { 
+  background: var(--froth); 
+  width: 100%; 
+  max-width: 420px; 
+  max-height: 80vh; 
+  border-radius: var(--radius-lg); 
+  display: flex; 
+  flex-direction: column; 
+  overflow: hidden; 
+  border: 1px solid var(--line); 
+  box-shadow: 0 16px 32px rgba(54, 45, 41, 0.25);
+}
 
 .footer-row { display: flex; align-items: center; gap: 8px; }
 .footer-spacer { flex: 1; }
@@ -1987,7 +2018,7 @@ html, body {
 .option-chevron { margin-left: auto; color: var(--text-faint); flex-shrink: 0; }
 .pick-list { display: flex; flex-direction: column; }
 
-/* Estilos de KeyPickerSheet */
+/* Estilos de KeyPickerSheet Centrado */
 .key-picker-hint { font-size: 13.5px; color: var(--text-dim); margin: 0 0 14px; line-height: 1.4; }
 .key-picker-list { display: flex; flex-direction: column; gap: 8px; }
 .key-badge {
