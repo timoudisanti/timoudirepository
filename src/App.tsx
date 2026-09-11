@@ -765,8 +765,8 @@ function SwipeToDeleteRow({ id, openId, setOpenId, onDelete, onTap, children }) 
 
 /* ---------------- Session song list ---------------- */
 
-const LONG_PRESS_MS = 400;
-const MOVE_CANCEL_PX = 18;
+const LONG_PRESS_MS = 300;
+const MOVE_CANCEL_PX = 8;
 const ROW_GAP = 8;
 
 function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, onRemove }) {
@@ -781,10 +781,17 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
   const timersRef = useRef({});
   const gestureRef = useRef({});
   const prevRectsRef = useRef(null);
+  const autoScrollFrameRef = useRef(null);
+  const pointerClientYRef = useRef(0);
+  const dragStateRef = useRef(null);
 
   const [dragState, setDragState] = useState(null);
   const [openSwipeId, setOpenSwipeId] = useState(null);
   const [liveSwipe, setLiveSwipe] = useState(null);
+
+  useEffect(() => {
+    dragStateRef.current = dragState;
+  }, [dragState]);
 
   useLayoutEffect(() => {
     const firstRects = prevRectsRef.current;
@@ -799,19 +806,91 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
       if (dy) {
         node.style.transition = "none";
         node.style.transform = `translateY(${dy}px)`;
+        void node.offsetHeight;
         requestAnimationFrame(() => {
-          node.style.transition = "transform 220ms ease";
+          node.style.transition = "transform 250ms cubic-bezier(0.2, 0, 0, 1)";
           node.style.transform = "";
         });
       }
     });
   }, [order]);
 
+  const checkReorder = useCallback(() => {
+    const ds = dragStateRef.current;
+    if (!ds) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    const currentTop = ds.top + ds.translateY;
+    const step = ds.height + ROW_GAP;
+    const containerTop = container.getBoundingClientRect().top;
+    let targetIndex = Math.round((currentTop - containerTop) / step);
+    targetIndex = Math.max(0, Math.min(order.length - 1, targetIndex));
+    const currentIndex = order.indexOf(ds.id);
+
+    if (targetIndex !== currentIndex && targetIndex >= 0) {
+      const firstRects = {};
+      order.forEach((oid) => {
+        if (oid === ds.id) return;
+        const node = rowRefs.current[oid];
+        if (node) firstRects[oid] = node.getBoundingClientRect();
+      });
+      prevRectsRef.current = firstRects;
+      setOrder((prevOrder) => {
+        const next = [...prevOrder];
+        const idx = next.indexOf(ds.id);
+        if (idx !== -1) {
+          next.splice(idx, 1);
+          next.splice(targetIndex, 0, ds.id);
+        }
+        return next;
+      });
+    }
+  }, [order]);
+
+  const stopAutoScroll = () => {
+    if (autoScrollFrameRef.current) {
+      cancelAnimationFrame(autoScrollFrameRef.current);
+      autoScrollFrameRef.current = null;
+    }
+  };
+
+  const startAutoScrollIfNeeded = useCallback(() => {
+    if (autoScrollFrameRef.current) return;
+
+    const loop = () => {
+      if (!dragStateRef.current) {
+        autoScrollFrameRef.current = null;
+        return;
+      }
+      const clientY = pointerClientYRef.current;
+      const topThreshold = 90;
+      const bottomThreshold = window.innerHeight - 90;
+      let scrollSpeed = 0;
+
+      if (clientY < topThreshold) {
+        scrollSpeed = -Math.min(16, (topThreshold - clientY) * 0.25);
+      } else if (clientY > bottomThreshold) {
+        scrollSpeed = Math.min(16, (clientY - bottomThreshold) * 0.25);
+      }
+
+      if (scrollSpeed !== 0) {
+        window.scrollBy(0, scrollSpeed);
+        checkReorder();
+        autoScrollFrameRef.current = requestAnimationFrame(loop);
+      } else {
+        autoScrollFrameRef.current = null;
+      }
+    };
+
+    autoScrollFrameRef.current = requestAnimationFrame(loop);
+  }, [checkReorder]);
+
   const clearTimerFor = (id) => {
     if (timersRef.current[id]) { clearTimeout(timersRef.current[id]); delete timersRef.current[id]; }
   };
 
-  const startDrag = (id, targetEl, pointerId) => {
+  const startDrag = (id, targetEl, pointerId, clientY) => {
     const node = rowRefs.current[id];
     if (!node) return;
     onToggleRow(null);
@@ -820,9 +899,12 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
       try { targetEl.setPointerCapture(pointerId); } catch (err) {}
     }
     const rect = node.getBoundingClientRect();
-    setDragState({ id, top: rect.top, left: rect.left, width: rect.width, height: rect.height, translateY: 0 });
+    const initialDs = { id, top: rect.top, left: rect.left, width: rect.width, height: rect.height, translateY: 0, startClientY: clientY };
+    dragStateRef.current = initialDs;
+    setDragState(initialDs);
+
     if (typeof navigator !== "undefined" && navigator.vibrate) {
-      try { navigator.vibrate(12); } catch (e) { /* no soportado */ }
+      try { navigator.vibrate(15); } catch (e) {}
     }
   };
 
@@ -831,13 +913,23 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
     if (openSwipeId && openSwipeId !== id) setOpenSwipeId(null);
     const targetEl = e.currentTarget;
     const pointerId = e.pointerId;
-    gestureRef.current[id] = { mode: "pending", startX: e.clientX, startY: e.clientY, targetEl, pointerId };
+    pointerClientYRef.current = e.clientY;
+
+    gestureRef.current[id] = {
+      mode: "pending",
+      startX: e.clientX,
+      startY: e.clientY,
+      lastY: e.clientY,
+      targetEl,
+      pointerId
+    };
+
     clearTimerFor(id);
     timersRef.current[id] = setTimeout(() => {
       const g = gestureRef.current[id];
       if (g && g.mode === "pending") {
-        g.mode = "dragging-vertical";
-        startDrag(id, targetEl, pointerId);
+        g.mode = "dragging";
+        startDrag(id, targetEl, pointerId, e.clientY);
       }
     }, LONG_PRESS_MS);
   };
@@ -846,77 +938,78 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
     const g = gestureRef.current[id];
     if (!g) return;
 
-    if (g.mode === "dragging-vertical") {
-      if (!dragState || dragState.id !== id) return;
+    pointerClientYRef.current = e.clientY;
+
+    if (g.mode === "dragging") {
       const dy = e.clientY - g.startY;
-      const container = containerRef.current;
-      if (container) {
-        const containerTop = container.getBoundingClientRect().top;
-        const step = dragState.height + ROW_GAP;
-        const currentTop = dragState.top + dy;
-        let targetIndex = Math.round((currentTop - containerTop) / step);
-        targetIndex = Math.max(0, Math.min(order.length - 1, targetIndex));
-        const currentIndex = order.indexOf(id);
-        if (targetIndex !== currentIndex) {
-          const firstRects = {};
-          order.forEach((oid) => {
-            if (oid === id) return;
-            const node = rowRefs.current[oid];
-            if (node) firstRects[oid] = node.getBoundingClientRect();
-          });
-          prevRectsRef.current = firstRects;
-          const next = [...order];
-          next.splice(currentIndex, 1);
-          next.splice(targetIndex, 0, id);
-          setOrder(next);
-        }
-      }
-      setDragState((d) => (d ? { ...d, translateY: dy } : d));
+      setDragState((d) => {
+        if (!d) return null;
+        const updated = { ...d, translateY: dy };
+        dragStateRef.current = updated;
+        return updated;
+      });
+      checkReorder();
+      startAutoScrollIfNeeded();
       return;
     }
 
-    if (g.mode === "swiping-horizontal") {
-      const dx = e.clientX - g.startX;
+    const dx = e.clientX - g.startX;
+    const dy = e.clientY - g.startY;
+
+    if (g.mode === "pending") {
+      const dist = Math.hypot(dx, dy);
+      if (dist > MOVE_CANCEL_PX) {
+        clearTimerFor(id);
+        if (Math.abs(dy) >= Math.abs(dx)) {
+          g.mode = "scrolling";
+        } else {
+          g.mode = "swiping";
+          const base = openSwipeId === id ? -REVEAL_WIDTH : 0;
+          setLiveSwipe({ id, x: Math.max(-REVEAL_WIDTH, Math.min(0, base + dx)) });
+        }
+      }
+      return;
+    }
+
+    if (g.mode === "scrolling") {
+      const scrollDelta = g.lastY - e.clientY;
+      window.scrollBy(0, scrollDelta);
+      g.lastY = e.clientY;
+      return;
+    }
+
+    if (g.mode === "swiping") {
       const base = openSwipeId === id ? -REVEAL_WIDTH : 0;
       setLiveSwipe({ id, x: Math.max(-REVEAL_WIDTH, Math.min(0, base + dx)) });
       return;
-    }
-
-    if (g.mode === "pending") {
-      const dx = e.clientX - g.startX;
-      const dy = e.clientY - g.startY;
-      if (Math.abs(dx) > MOVE_CANCEL_PX && Math.abs(dx) > Math.abs(dy)) {
-        g.mode = "swiping-horizontal";
-        clearTimerFor(id);
-        const base = openSwipeId === id ? -REVEAL_WIDTH : 0;
-        setLiveSwipe({ id, x: Math.max(-REVEAL_WIDTH, Math.min(0, base + dx)) });
-      } else if (Math.hypot(dx, dy) > MOVE_CANCEL_PX) {
-        g.mode = "scrolling";
-        clearTimerFor(id);
-      }
     }
   };
 
   const handlePointerUp = (id, e) => {
     const g = gestureRef.current[id];
     clearTimerFor(id);
+    stopAutoScroll();
+
     delete gestureRef.current[id];
     if (!g) return;
 
-    if (g.mode === "dragging-vertical") {
+    if (g.mode === "dragging") {
       if (e.currentTarget && e.currentTarget.releasePointerCapture) {
         try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (err) {}
       }
+      dragStateRef.current = null;
       setDragState(null);
       onReorderCommit(order);
       return;
     }
-    if (g.mode === "swiping-horizontal") {
+
+    if (g.mode === "swiping") {
       const x = liveSwipe && liveSwipe.id === id ? liveSwipe.x : (openSwipeId === id ? -REVEAL_WIDTH : 0);
       setOpenSwipeId(x <= -REVEAL_WIDTH / 2 ? id : null);
       setLiveSwipe(null);
       return;
     }
+
     if (g.mode === "pending") {
       if (openSwipeId === id) setOpenSwipeId(null);
       else onToggleRow(id);
@@ -925,8 +1018,12 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
 
   const handlePointerCancel = (id) => {
     clearTimerFor(id);
+    stopAutoScroll();
     delete gestureRef.current[id];
-    if (dragState && dragState.id === id) setDragState(null);
+    if (dragState && dragState.id === id) {
+      dragStateRef.current = null;
+      setDragState(null);
+    }
     if (liveSwipe && liveSwipe.id === id) setLiveSwipe(null);
   };
 
@@ -944,8 +1041,17 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
             className="session-row-wrap"
             style={
               isDragging
-                ? { position: "fixed", top: dragState.top + dragState.translateY, left: dragState.left, width: dragState.width, zIndex: 1000, opacity: 0.55, touchAction: "none" }
-                : undefined
+                ? {
+                    position: "fixed",
+                    top: dragState.top + dragState.translateY,
+                    left: dragState.left,
+                    width: dragState.width,
+                    zIndex: 1000,
+                    opacity: 0.88,
+                    boxShadow: "0 10px 25px rgba(0,0,0,0.25)",
+                    touchAction: "none"
+                  }
+                : { touchAction: "none" }
             }
           >
             <div className="swipe-track">
@@ -1258,7 +1364,7 @@ export default function App() {
 
       <header className="app-header">
         <div className="staff-lines" aria-hidden="true"><span /><span /><span /></div>
-        <h1 className="wordmark">Worshinotes test</h1>
+        <h1 className="wordmark">Worshinotes</h1>
         <button className="icon-btn refresh-icon" onClick={() => { loadSongs(); loadSessions(); }} title="Actualizar datos">
           <RefreshCw size={16} />
         </button>
@@ -1356,12 +1462,12 @@ export default function App() {
                   </button>
                 )}
                 <input
-  type="date"
-  className="session-date-input"
-  value={(activeSession.date || "").slice(0, 10)}
-  onChange={(e) => patchSessionLocal({ date: e.target.value })}
-  onBlur={() => syncActiveSessionToServer()}
-/>
+                  type="date"
+                  className="session-date-input"
+                  value={(activeSession.date || "").slice(0, 10)}
+                  onChange={(e) => patchSessionLocal({ date: e.target.value })}
+                  onBlur={() => syncActiveSessionToServer()}
+                />
               </div>
               <button className="icon-btn danger" onClick={() => deleteSession(activeSession.id)} aria-label="Eliminar sesión">
                 <Trash2 size={18} />
@@ -1699,7 +1805,7 @@ html, body {
 .session-date-input { background: none; border: none; color: var(--text-faint); font-size: 12px; font-family: inherit; padding: 0; width: fit-content; }
 
 .session-song-list { display: flex; flex-direction: column; gap: 8px; position: relative; }
-.session-row-wrap { touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.session-row-wrap { touch-action: none; user-select: none; -webkit-user-select: none; }
 .drag-hint { text-align: center; font-size: 11.5px; color: var(--text-faint); margin: 10px 0 0; }
 .session-row { background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
 .session-row-dragging { border-color: var(--text-faint); box-shadow: 0 12px 28px rgba(0,0,0,0.18); }
