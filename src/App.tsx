@@ -699,7 +699,7 @@ function SearchSheet({ songs, onClose, onPick, excludeIds = [] }) {
 
 /* ---------------- Session song row ---------------- */
 
-function SessionSongRow({ song, number, expanded, dragging }) {
+function SessionSongRow({ song, number, expanded, dragging, onChangeKey }) {
   const displayKey = song.selectedKey || song.keys?.[0]?.tono;
   const sections = displaySections(song);
 
@@ -724,12 +724,18 @@ function SessionSongRow({ song, number, expanded, dragging }) {
             <Pill tempo={song.tempo}>{TEMPO_LABEL[song.tempo]}</Pill>
             {(song.keys || []).map((k, i) => (
               k.tono && (
-                <span
+                <button
                   key={i}
-                  className={`pill ${k.tono === displayKey ? "pill-selected-key" : ""}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onChangeKey?.(song.id, k.tono.trim());
+                  }}
+                  className={`pill pill-key-btn ${k.tono === displayKey ? "pill-selected-key" : ""}`}
+                  title="Tocar para seleccionar este tono"
                 >
                   {k.tono}{k.cantante ? ` · ${k.cantante}` : ""}
-                </span>
+                </button>
               )
             ))}
             {song.youtube && (
@@ -828,7 +834,7 @@ const LONG_PRESS_MS = 300;
 const MOVE_CANCEL_PX = 8;
 const ROW_GAP = 8;
 
-function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, onRemove }) {
+function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, onRemove, onChangeKey }) {
   const [order, setOrder] = useState(() => songs.map((s) => String(s.id)));
   useEffect(() => { setOrder(songs.map((s) => String(s.id))); }, [songs]);
 
@@ -1125,7 +1131,13 @@ function SessionSongList({ songs, onReorderCommit, expandedRowId, onToggleRow, o
                 onPointerCancel={() => handlePointerCancel(sid)}
                 style={{ transform: `translateX(${swipeX}px)`, transition: isLiveSwiping ? "none" : "transform 200ms ease" }}
               >
-                <SessionSongRow song={s} number={i + 1} expanded={expandedRowId === sid} dragging={isDragging} />
+                <SessionSongRow
+                  song={s}
+                  number={i + 1}
+                  expanded={expandedRowId === sid}
+                  dragging={isDragging}
+                  onChangeKey={onChangeKey}
+                />
               </div>
             </div>
           </div>
@@ -1323,6 +1335,22 @@ export default function App() {
     try {
       await postToAppsScript(SHEETY_SESSIONS_URL, formatSessionForSheety(updated));
     } catch (e) {}
+  };
+
+  /* ---- Cambiar tono de una canción dentro de la sesión activa ---- */
+  const changeSongKeyInActiveSession = (instanceId, newKey) => {
+    if (!activeSession) return;
+    const updatedSongIds = activeSession.songIds.map((entry) => {
+      const entryInstId = typeof entry === "object" ? entry.instanceId : String(entry);
+      if (entryInstId === instanceId) {
+        if (typeof entry === "object") {
+          return { ...entry, key: newKey };
+        }
+        return { id: String(entry), key: newKey, instanceId: String(entry) };
+      }
+      return entry;
+    });
+    updateActiveSession({ songIds: updatedSongIds });
   };
 
   /* ---- Lógica para solicitar y ejecutar la adición de canción con tono ---- */
@@ -1612,6 +1640,7 @@ export default function App() {
                 expandedRowId={expandedRowId}
                 onToggleRow={(id) => setExpandedRowId((cur) => (id === null ? null : cur === id ? null : id))}
                 onRemove={removeSongFromSession}
+                onChangeKey={changeSongKeyInActiveSession}
               />
             )}
             <p className="drag-hint">Mantené apretado y arrastrá para reordenar · deslizá a la izquierda para eliminar</p>
@@ -1908,6 +1937,17 @@ html, body {
   border: 1px solid var(--line);
 }
 
+.pill-key-btn {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+
+.pill-key-btn:active {
+  transform: scale(0.95);
+}
+
 .pill-selected-key {
   background: var(--latte) !important;
   color: var(--froth) !important;
@@ -1958,7 +1998,6 @@ html, body {
 .sheet-header h2 { font-size: 18px; margin: 0; font-weight: 700; color: var(--text); word-break: break-word; }
 .sheet-body { padding: 16px 18px; overflow-y: auto; flex: 1; background: var(--froth); }
 
-/* Pie de formulario ajustado con safe area inset para iPhone */
 .sheet-footer { 
   padding: 14px 18px calc(24px + env(safe-area-inset-bottom)); 
   border-top: 1px solid var(--line); 
@@ -1966,7 +2005,6 @@ html, body {
 }
 .sheet-divider { font-size: 12px; color: var(--text-faint); padding: 12px 2px 4px; font-weight: 600; }
 
-/* Estilos para Modales Centrados */
 .modal-overlay { 
   position: fixed; 
   inset: 0; 
