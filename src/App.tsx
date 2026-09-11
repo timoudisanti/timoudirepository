@@ -1616,7 +1616,7 @@ export default function App() {
 /* ---------------- CSS ---------------- */
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;600;700;800;900&display=swap');
 
 input, select, textarea {
   font-size: 16px !important;
@@ -1686,7 +1686,7 @@ html, body {
 .staff-lines span:nth-child(1) { width: 22px; }
 .staff-lines span:nth-child(2) { width: 14px; }
 .staff-lines span:nth-child(3) { width: 18px; }
-.wordmark { font-weight: 700; font-size: 22px; letter-spacing: 0.01em; margin: 0; color: var(--text); flex: 1; margin-left: 12px; }
+.wordmark { font-weight: 800; font-size: 22px; letter-spacing: 0.01em; margin: 0; color: var(--text); flex: 1; margin-left: 12px; }
 .refresh-icon { color: var(--text-dim); }
 
 .banner-error { margin: 10px 16px 0; background: var(--danger-dim); color: var(--danger); padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--danger); }
