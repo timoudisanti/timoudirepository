@@ -828,33 +828,21 @@ function SwipeToDeleteRow({ id, openId, setOpenId, onDelete, onTap, children }) 
   const onPointerCancel = () => { gestureRef.current = null; setLiveX(null); };
 
   return (
-    <>
-      {isOpen && (
-        <div
-          className="swipe-backdrop"
-          onPointerDown={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            setOpenId(null);
-          }}
-        />
-      )}
-      <div className={`swipe-track ${isOpen ? "swipe-track-open" : ""}`}>
-        <button className="swipe-delete-bg" onClick={onDelete} aria-label="Eliminar">
-          <Trash2 size={18} />
-        </button>
-        <div
-          className="swipe-content"
-          style={{ transform: `translateX(${x}px)`, transition: liveX !== null ? "none" : "transform 200ms ease" }}
-          onPointerDown={onPointerDown}
-          onPointerMove={onPointerMove}
-          onPointerUp={onPointerUp}
-          onPointerCancel={onPointerCancel}
-        >
-          {children}
-        </div>
+    <div className={`swipe-track ${isOpen ? "swipe-track-open" : ""}`}>
+      <button className="swipe-delete-bg" onClick={onDelete} aria-label="Eliminar">
+        <Trash2 size={18} />
+      </button>
+      <div
+        className="swipe-content"
+        style={{ transform: `translateX(${x}px)`, transition: liveX !== null ? "none" : "transform 200ms ease" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerCancel}
+      >
+        {children}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1617,6 +1605,16 @@ export default function App() {
               />
             ) : (
               <div className="song-list">
+                {openSwipeSongId && (
+                  <div
+                    className="swipe-backdrop"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setOpenSwipeSongId(null);
+                    }}
+                  />
+                )}
                 {sortedSongs.map((s) => (
                   <SwipeToDeleteRow
                     key={s.id}
@@ -1716,6 +1714,16 @@ export default function App() {
               <EmptyState icon={<ListMusic size={28} />} title="Todavía no armaste sesiones" hint="Creá una sesión para preparar tu próximo show" />
             ) : (
               <div className="session-list">
+                {openSwipeSessionId && (
+                  <div
+                    className="swipe-backdrop"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      setOpenSwipeSessionId(null);
+                    }}
+                  />
+                )}
                 {sessions
                   .slice()
                   .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
@@ -1946,7 +1954,7 @@ html, body {
 .icon-btn:disabled { opacity: 0.3; cursor: default; }
 .icon-btn:disabled:hover { background: none; }
 
-.song-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+.song-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; position: relative; }
 .song-row { display: flex; align-items: stretch; gap: 4px; background: var(--froth); border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.03); }
 .song-row-main { flex: 1; text-align: left; background: none; border: none; padding: 12px 14px; cursor: pointer; font-family: inherit; color: var(--text); display: flex; flex-direction: column; gap: 6px; }
 .song-row-top { display: flex; align-items: center; gap: 8px; }
@@ -2177,7 +2185,7 @@ html, body {
 .swipe-delete-bg { position: absolute; top: 0; right: 0; bottom: 0; width: 84px; background: var(--danger); color: #FFFFFF; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; }
 .swipe-content { position: relative; will-change: transform; touch-action: pan-y; }
 
-.session-list { display: flex; flex-direction: column; gap: 8px; }
+.session-list { display: flex; flex-direction: column; gap: 8px; position: relative; }
 .session-card { display: flex; align-items: center; gap: 12px; background: var(--froth); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 13px 14px; cursor: pointer; font-family: inherit; color: var(--text); text-align: left; }
 .session-card-icon { width: 34px; height: 34px; border-radius: 10px; background: var(--cinna); color: var(--espresso); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .session-card-body { flex: 1; }
