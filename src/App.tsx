@@ -1099,6 +1099,7 @@ export default function App() {
 
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [openSwipeSessionId, setOpenSwipeSessionId] = useState(null);
+  const [openSwipeSongId, setOpenSwipeSongId] = useState(null);
   const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [sessionAddMenuOpen, setSessionAddMenuOpen] = useState(false);
   const [expandedRowId, setExpandedRowId] = useState(null);
@@ -1365,7 +1366,6 @@ export default function App() {
       <style>{CSS}</style>
 
       <header className="app-header">
-        <div className="staff-lines" aria-hidden="true"><span /><span /><span /></div>
         <h1 className="wordmark">WORSHINOTES</h1>
         <button className="icon-btn refresh-icon" onClick={() => { loadSongs(); loadSessions(); }} title="Actualizar datos">
           <RefreshCw size={16} />
@@ -1427,12 +1427,19 @@ export default function App() {
             ) : (
               <div className="song-list">
                 {sortedSongs.map((s) => (
-                  <SongRow
+                  <SwipeToDeleteRow
                     key={s.id}
-                    song={s}
-                    onView={(song) => setViewingSong(song)}
-                    onAddClick={(song) => setAddSheetSong(song)}
-                  />
+                    id={String(s.id)}
+                    openId={openSwipeSongId}
+                    setOpenId={setOpenSwipeSongId}
+                    onDelete={() => deleteSong(s.id)}
+                  >
+                    <SongRow
+                      song={s}
+                      onView={(song) => setViewingSong(song)}
+                      onAddClick={(song) => setAddSheetSong(song)}
+                    />
+                  </SwipeToDeleteRow>
                 ))}
               </div>
             )}
@@ -1632,15 +1639,6 @@ html, body {
 }
 
 :root {
-  /* Paleta Café Collection Ajustada:
-     - Froth (#F1EEEB): Tarjetas de canciones/sesiones, modal body, search bar, selectores, sección form, bottom nav, suggest card.
-     - Chai Suave (#ECE6E0): Fondo general de la pantalla, letras (lyrics), header/footer modal, inputs & textareas.
-     - Latte (#A09086): Tone badges, wordmark, btn-primary, setlist numbers, active nav, segmented button active, add-btn, yt-link.
-     - Cinna (#CFB3A9): FAB (+), pill-rapida, session-card-icon, suggest-card border.
-     - Creme (#CDC6C3) / Line (#D8D0CB): Líneas divisorias, bordes, pill-lenta.
-     - Espresso (#362D29): Títulos, letras y texto principal.
-     - Truffle Trouble (#B85B50): Swipe delete, botones eliminar, error banners.
-  */
   --froth: #F1EEEB;
   --chai: #ECE6E0;
   --creme: #CDC6C3;
@@ -1681,12 +1679,7 @@ html, body {
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .app-header { padding: 22px 20px 16px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: var(--bg); }
-.staff-lines { display: flex; flex-direction: column; gap: 3px; width: 22px; }
-.staff-lines span { display: block; height: 2px; background: var(--latte); border-radius: 2px; }
-.staff-lines span:nth-child(1) { width: 22px; }
-.staff-lines span:nth-child(2) { width: 14px; }
-.staff-lines span:nth-child(3) { width: 18px; }
-.wordmark { font-weight: 800; font-size: 22px; letter-spacing: 0.01em; margin: 0; color: var(--text); flex: 1; margin-left: 12px; }
+.wordmark { font-weight: 800; font-size: 22px; letter-spacing: 0.01em; margin: 0; color: var(--text); flex: 1; }
 .refresh-icon { color: var(--text-dim); }
 
 .banner-error { margin: 10px 16px 0; background: var(--danger-dim); color: var(--danger); padding: 10px 14px; border-radius: var(--radius-sm); font-size: 13px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; border: 1px solid var(--danger); }
@@ -1742,7 +1735,6 @@ html, body {
 .song-row-top { display: flex; align-items: center; gap: 8px; }
 .song-title { font-size: 16.5px; font-weight: 700; color: var(--text); display: flex; align-items: center; justify-content: space-between; width: 100%; }
 
-/* --- RESALTADO DE TONO (Latte con texto Froth) --- */
 .song-tono, .session-tono {
   background: var(--latte);
   color: var(--froth);
@@ -1763,7 +1755,6 @@ html, body {
 .song-singer { color: var(--text-faint); font-size: 12.5px; }
 .add-btn { margin: 8px 8px 8px 0; align-self: center; color: var(--latte); }
 
-/* --- RESALTADO DE TEMPO (Cinna / Creme) --- */
 .pill { font-size: 11px; padding: 3px 9px; border-radius: 999px; font-weight: 700; background: var(--creme); color: var(--text); display: inline-flex; align-items: center; }
 
 .pill-rapida {
@@ -1801,7 +1792,7 @@ html, body {
 }
 @media (max-width: 480px) { .fab { right: 20px; } }
 
-.bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: var(--froth); border-top: 1px solid var(--line); display: flex; padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); }
+.bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: var(--froth); border-top: 1px solid var(--line); display: flex; padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); z-index: 45; }
 .bottom-nav button { flex: 1; background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 3px; color: var(--text-faint); font-size: 11px; font-family: inherit; padding: 6px 0; cursor: pointer; }
 .bottom-nav button.nav-active { color: var(--latte); font-weight: 700; }
 
