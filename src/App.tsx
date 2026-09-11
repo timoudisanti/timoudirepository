@@ -120,11 +120,28 @@ function parseSessionFromSheety(row, idx) {
     ? String(row.id)
     : `session-${idx + 1}`;
 
+  const songIds = Array.isArray(rawIds)
+    ? rawIds.map((item, i) => {
+        if (typeof item === "object" && item !== null) {
+          return {
+            id: String(item.id || item.songId || ""),
+            key: item.key || item.selectedKey || "",
+            instanceId: item.instanceId || `inst-${i}-${item.id || item.songId}`
+          };
+        }
+        return {
+          id: String(item),
+          key: "",
+          instanceId: `inst-${i}-${item}`
+        };
+      })
+    : [];
+
   return {
     id: sessionId,
     title: row.title || "",
     date: row.date || todayISO(),
-    songIds: Array.isArray(rawIds) ? rawIds.map(String) : [],
+    songIds: songIds,
     createdAt: row.createdat || Date.now(),
   };
 }
@@ -312,6 +329,38 @@ function EmptyState({ icon, title, hint }) {
       <p className="empty-title">{title}</p>
       {hint && <p className="empty-hint">{hint}</p>}
     </div>
+  );
+}
+
+/* ---------------- Key Picker Sheet ---------------- */
+
+function KeyPickerSheet({ song, onClose, onSelectKey }) {
+  const validKeys = (song.keys || []).filter((k) => k.tono && k.tono.trim() !== "");
+
+  return (
+    <Sheet title={`Elegir tono para "${song.title}"`} onClose={onClose}>
+      <p className="key-picker-hint">Esta canción tiene tonos alternativos. Seleccioná en qué tono la querés agregar a esta sesión:</p>
+      <div className="key-picker-list">
+        {validKeys.map((k, idx) => (
+          <button
+            key={idx}
+            className="option-row key-option-row"
+            onClick={() => onSelectKey(k.tono.trim())}
+          >
+            <div className="key-badge">{k.tono.trim()}</div>
+            <div>
+              <div className="option-title">
+                {idx === 0 ? "Tono principal" : `Tono alternativo ${idx}`}
+              </div>
+              <div className="option-sub">
+                {k.cantante ? `Canta: ${k.cantante}` : "Sin cantante asignado"}
+              </div>
+            </div>
+            <ChevronRight size={16} className="option-chevron" />
+          </button>
+        ))}
+      </div>
+    </Sheet>
   );
 }
 
@@ -651,8 +700,9 @@ function SearchSheet({ songs, onClose, onPick, excludeIds = [] }) {
 /* ---------------- Session song row ---------------- */
 
 function SessionSongRow({ song, number, expanded, dragging }) {
-  const primary = song.keys?.[0];
+  const displayKey = song.selectedKey || song.keys?.[0]?.tono;
   const sections = displaySections(song);
+
   return (
     <div className={`session-row${dragging ? " session-row-dragging" : ""}`}>
       <div className="session-row-head">
@@ -661,7 +711,7 @@ function SessionSongRow({ song, number, expanded, dragging }) {
           <div>
             <div className="session-title-line">
               {song.title}
-              {primary?.tono ? <span className="session-tono">{primary.tono}</span> : null}
+              {displayKey ? <span className="session-tono">{displayKey}</span> : null}
             </div>
             <div className="session-author-line">{song.author || "Autor desconocido"}</div>
           </div>
@@ -673,7 +723,14 @@ function SessionSongRow({ song, number, expanded, dragging }) {
           <div className="session-row-meta">
             <Pill tempo={song.tempo}>{TEMPO_LABEL[song.tempo]}</Pill>
             {(song.keys || []).map((k, i) => (
-              k.tono && <Pill key={i}>{k.tono}{k.cantante ? ` · ${k.cantante}` : ""}</Pill>
+              k.tono && (
+                <span
+                  key={i}
+                  className={`pill ${k.tono === displayKey ? "pill-selected-key" : ""}`}
+                >
+                  {k.tono}{k.cantante ? ` · ${k.cantante}` : ""}
+                </span>
+              )
             ))}
             {song.youtube && (
               <a className="yt-link" href={song.youtube} target="_blank" rel="noreferrer" onPointerDown={(e) => e.stopPropagation()}>
@@ -1106,6 +1163,9 @@ export default function App() {
   const [suggest, setSuggest] = useState(null);
   const [editingTitle, setEditingTitle] = useState(false);
 
+  /* ---- Modal de selección de tono ---- */
+  const [keyPickerData, setKeyPickerData] = useState(null);
+
   /* ---- Apps Script / Sheety API loads ---- */
   const loadSongs = useCallback(async () => {
     try {
@@ -1184,12 +1244,17 @@ export default function App() {
     }
   };
 
-  const createSession = async (firstSong) => {
+  const createSession = async (firstSong, chosenKey = null) => {
+    const firstKey = chosenKey || firstSong?.keys?.[0]?.tono || "";
+    const firstEntry = firstSong
+      ? [{ id: String(firstSong.id), key: firstKey, instanceId: uid() }]
+      : [];
+
     const newSession = {
       id: uid(),
       title: "",
       date: todayISO(),
-      songIds: firstSong ? [String(firstSong.id)] : [],
+      songIds: firstEntry,
       createdAt: Date.now(),
     };
 
@@ -1245,10 +1310,12 @@ export default function App() {
     });
   };
 
-  const addSongToSession = async (sessionId, song) => {
+  const addSongToSession = async (sessionId, song, chosenKey = null) => {
     const targetSession = sessions.find((s) => String(s.id) === String(sessionId));
     if (!targetSession) return;
-    const updated = { ...targetSession, songIds: [...targetSession.songIds, String(song.id)] };
+    const keyToUse = chosenKey || song.keys?.[0]?.tono || "";
+    const newEntry = { id: String(song.id), key: keyToUse, instanceId: uid() };
+    const updated = { ...targetSession, songIds: [...targetSession.songIds, newEntry] };
     const nextSessions = sessions.map((s) => (String(s.id) === String(sessionId) ? updated : s));
     persistSessionsLocally(nextSessions);
     setAddSheetSong(null);
@@ -1256,6 +1323,28 @@ export default function App() {
     try {
       await postToAppsScript(SHEETY_SESSIONS_URL, formatSessionForSheety(updated));
     } catch (e) {}
+  };
+
+  /* ---- Lógica para solicitar y ejecutar la adición de canción con tono ---- */
+  const requestAddSongToSession = (song, targetSessionId) => {
+    setAddSheetSong(null);
+    const validKeys = (song.keys || []).filter((k) => k.tono && k.tono.trim() !== "");
+
+    if (validKeys.length > 1) {
+      setKeyPickerData({ song, targetSessionId });
+    } else {
+      const defaultKey = validKeys[0]?.tono || "";
+      executeAddSong(song, targetSessionId, defaultKey);
+    }
+  };
+
+  const executeAddSong = (song, targetSessionId, chosenKey) => {
+    if (targetSessionId === "new") {
+      createSession(song, chosenKey);
+    } else {
+      addSongToSession(targetSessionId, song, chosenKey);
+    }
+    setKeyPickerData(null);
   };
 
   const deleteSession = async (id) => {
@@ -1306,24 +1395,55 @@ export default function App() {
   }, [filteredSongs, sortBy, searchType, query]);
 
   const activeSession = sessions.find((s) => String(s.id) === String(activeSessionId)) || null;
+
   const activeSessionSongs = useMemo(() => {
     if (!activeSession) return [];
     return activeSession.songIds
-      .map((id) => songs.find((s) => String(s.id) === String(id)))
+      .map((entry) => {
+        const songId = typeof entry === "object" ? entry.id : String(entry);
+        const found = songs.find((s) => String(s.id) === songId);
+        if (!found) return null;
+        const selectedKey = (typeof entry === "object" && entry.key) ? entry.key : (found.keys?.[0]?.tono || "");
+        const instanceId = (typeof entry === "object" && entry.instanceId) ? entry.instanceId : String(found.id);
+        return {
+          ...found,
+          id: instanceId,
+          originalId: found.id,
+          selectedKey: selectedKey,
+        };
+      })
       .filter(Boolean);
   }, [activeSession, songs]);
 
-  const reorderSession = (newIds) => updateActiveSession({ songIds: newIds.map(String) });
+  const reorderSession = (newOrderInstanceIds) => {
+    if (!activeSession) return;
+    const entryMap = new Map(
+      activeSession.songIds.map((entry) => [
+        typeof entry === "object" ? entry.instanceId : String(entry),
+        entry
+      ])
+    );
+    const reorderedEntries = newOrderInstanceIds
+      .map((instId) => entryMap.get(instId))
+      .filter(Boolean);
+    updateActiveSession({ songIds: reorderedEntries });
+  };
 
-  const removeSongFromSession = (id) => {
-    updateActiveSession({ songIds: activeSession.songIds.filter((sid) => String(sid) !== String(id)) });
+  const removeSongFromSession = (instanceId) => {
+    if (!activeSession) return;
+    updateActiveSession({
+      songIds: activeSession.songIds.filter((entry) => {
+        const entryInstId = typeof entry === "object" ? entry.instanceId : String(entry);
+        return entryInstId !== instanceId;
+      })
+    });
   };
 
   const addSongToActiveSession = (song) => {
-    updateActiveSession({ songIds: [...activeSession.songIds, String(song.id)] });
     setSessionSearchOpen(false);
     setSessionAddMenuOpen(false);
     setSuggest(null);
+    requestAddSongToSession(song, activeSession.id);
   };
 
   const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
@@ -1333,7 +1453,7 @@ export default function App() {
     const prev = activeSessionSongs[activeSessionSongs.length - 1];
     if (!prev) return;
 
-    const currentSet = new Set(activeSession.songIds.map(String));
+    const currentSet = new Set(activeSession.songIds.map((e) => typeof e === "object" ? String(e.id) : String(e)));
     const candidates = songs.filter((s) => !currentSet.has(String(s.id)));
     if (candidates.length === 0) {
       setSuggest({ result: null, error: "No hay más canciones en tu repertorio para sugerir." });
@@ -1587,11 +1707,30 @@ export default function App() {
       )}
 
       {addSheetSong && (
-        <AddToSessionSheet song={addSheetSong} sessions={sessions} onClose={() => setAddSheetSong(null)} onCreateNew={createSession} onAddToExisting={addSongToSession} />
+        <AddToSessionSheet
+          song={addSheetSong}
+          sessions={sessions}
+          onClose={() => setAddSheetSong(null)}
+          onCreateNew={(song) => requestAddSongToSession(song, "new")}
+          onAddToExisting={(sessionId, song) => requestAddSongToSession(song, sessionId)}
+        />
+      )}
+
+      {keyPickerData && (
+        <KeyPickerSheet
+          song={keyPickerData.song}
+          onClose={() => setKeyPickerData(null)}
+          onSelectKey={(chosenKey) => executeAddSong(keyPickerData.song, keyPickerData.targetSessionId, chosenKey)}
+        />
       )}
 
       {sessionSearchOpen && activeSession && (
-        <SearchSheet songs={songs} excludeIds={activeSession.songIds} onClose={() => setSessionSearchOpen(false)} onPick={addSongToActiveSession} />
+        <SearchSheet
+          songs={songs}
+          excludeIds={activeSession.songIds.map((e) => typeof e === "object" ? e.id : String(e))}
+          onClose={() => setSessionSearchOpen(false)}
+          onPick={addSongToActiveSession}
+        />
       )}
 
       {sessionAddMenuOpen && activeSession && (
@@ -1769,6 +1908,12 @@ html, body {
   border: 1px solid var(--line);
 }
 
+.pill-selected-key {
+  background: var(--latte) !important;
+  color: var(--froth) !important;
+  font-weight: 700;
+}
+
 .empty-state { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; padding: 60px 20px; color: var(--text-faint); }
 .empty-title { font-size: 16px; font-weight: 600; color: var(--text-dim); margin: 0; }
 .empty-hint { font-size: 13px; margin: 0; }
@@ -1841,6 +1986,23 @@ html, body {
 .option-sub { font-size: 12.5px; color: var(--text-faint); margin-top: 2px; }
 .option-chevron { margin-left: auto; color: var(--text-faint); flex-shrink: 0; }
 .pick-list { display: flex; flex-direction: column; }
+
+/* Estilos de KeyPickerSheet */
+.key-picker-hint { font-size: 13.5px; color: var(--text-dim); margin: 0 0 14px; line-height: 1.4; }
+.key-picker-list { display: flex; flex-direction: column; gap: 8px; }
+.key-badge {
+  background: var(--latte);
+  color: var(--froth);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  min-width: 44px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.key-option-row { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 12px; background: var(--froth); margin-bottom: 2px; }
+.key-option-row:hover { background: var(--chai); }
 
 .swipe-track { position: relative; overflow: hidden; border-radius: var(--radius-md); }
 .swipe-delete-bg { position: absolute; top: 0; right: 0; bottom: 0; width: 84px; background: var(--danger); color: #FFFFFF; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; }
