@@ -1504,7 +1504,7 @@ export default function App() {
                   {suggest.result.song.keys?.[0]?.tono ? <span className="session-tono">{suggest.result.song.keys[0].tono}</span> : null}
                 </div>
                 <div className="suggest-song-author">{suggest.result.song.author || "Autor desconocido"}</div>
-                {suggest.result.reason && <p className="suggest-reason">{suggest.result.reason}</p>}
+                {suggest.result.reason && <p className="suggest-reason">{suggest.reason}</p>}
                 <div className="suggest-actions">
                   <button className="btn btn-ghost" onClick={() => setSuggest(null)}>Descartar</button>
                   <button className="btn btn-ghost" onClick={runSuggest}><RefreshCw size={14} /> Otra</button>
@@ -1628,13 +1628,13 @@ html, body {
   margin: 0;
   padding: 0;
   overflow-x: hidden;
-  background-color: #E4D8CB;
+  background-color: #ECE6E0;
 }
 
 :root {
-  /* Paleta Café Collection según especificación:
-     - Froth (#F1EEEB): Tarjetas de canciones/sesiones, modal body, search bar, selectores, sección form, bottom nav, suggest card, text contrast.
-     - Chai (#E4D8CB): Fondo general de la pantalla, letras (lyrics), header/footer modal, inputs & textareas.
+  /* Paleta Café Collection Ajustada:
+     - Froth (#F1EEEB): Tarjetas de canciones/sesiones, modal body, search bar, selectores, sección form, bottom nav, suggest card.
+     - Chai Suave (#ECE6E0): Fondo general de la pantalla, letras (lyrics), header/footer modal, inputs & textareas.
      - Latte (#A09086): Tone badges, wordmark, btn-primary, setlist numbers, active nav, segmented button active, add-btn, yt-link.
      - Cinna (#CFB3A9): FAB (+), pill-rapida, session-card-icon, suggest-card border.
      - Creme (#CDC6C3) / Line (#D8D0CB): Líneas divisorias, bordes, pill-lenta.
@@ -1642,7 +1642,7 @@ html, body {
      - Truffle Trouble (#B85B50): Swipe delete, botones eliminar, error banners.
   */
   --froth: #F1EEEB;
-  --chai: #E4D8CB;
+  --chai: #ECE6E0;
   --creme: #CDC6C3;
   --latte: #A09086;
   --cinna: #CFB3A9;
