@@ -828,21 +828,33 @@ function SwipeToDeleteRow({ id, openId, setOpenId, onDelete, onTap, children }) 
   const onPointerCancel = () => { gestureRef.current = null; setLiveX(null); };
 
   return (
-    <div className="swipe-track">
-      <button className="swipe-delete-bg" onClick={onDelete} aria-label="Eliminar">
-        <Trash2 size={18} />
-      </button>
-      <div
-        className="swipe-content"
-        style={{ transform: `translateX(${x}px)`, transition: liveX !== null ? "none" : "transform 200ms ease" }}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerCancel}
-      >
-        {children}
+    <>
+      {isOpen && (
+        <div
+          className="swipe-backdrop"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            setOpenId(null);
+          }}
+        />
+      )}
+      <div className={`swipe-track ${isOpen ? "swipe-track-open" : ""}`}>
+        <button className="swipe-delete-bg" onClick={onDelete} aria-label="Eliminar">
+          <Trash2 size={18} />
+        </button>
+        <div
+          className="swipe-content"
+          style={{ transform: `translateX(${x}px)`, transition: liveX !== null ? "none" : "transform 200ms ease" }}
+          onPointerDown={onPointerDown}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerCancel}
+        >
+          {children}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1111,16 +1123,27 @@ function SessionSongList({ songs, onReorderCommit, onSongTap, onRemove }) {
 
   return (
     <div className="session-song-list" ref={containerRef}>
+      {openSwipeId && (
+        <div
+          className="swipe-backdrop"
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            setOpenSwipeId(null);
+          }}
+        />
+      )}
       {orderedSongs.map((s, i) => {
         const sid = String(s.id);
         const isDragging = dragState?.id === sid;
         const isLiveSwiping = liveSwipe?.id === sid;
-        const swipeX = isLiveSwiping ? liveSwipe.x : (openSwipeId === sid ? -REVEAL_WIDTH : 0);
+        const isSwipeOpen = openSwipeId === sid;
+        const swipeX = isLiveSwiping ? liveSwipe.x : (isSwipeOpen ? -REVEAL_WIDTH : 0);
         return (
           <div
             key={sid}
             ref={(el) => { rowRefs.current[sid] = el; }}
-            className="session-row-wrap"
+            className={`session-row-wrap ${isSwipeOpen ? "swipe-track-open" : ""}`}
             style={
               isDragging
                 ? {
@@ -2030,6 +2053,19 @@ html, body {
   background: var(--chai); 
 }
 .sheet-divider { font-size: 12px; color: var(--text-faint); padding: 12px 2px 4px; font-weight: 600; }
+
+/* Capa transparente de bloqueo cuando hay un swipe abierto */
+.swipe-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  background: transparent;
+}
+
+.swipe-track-open {
+  position: relative;
+  z-index: 49;
+}
 
 /* Vista Pantalla Completa para canciones de la Sesión */
 .fullscreen-overlay {
